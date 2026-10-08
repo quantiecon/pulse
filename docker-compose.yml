@@ -1,0 +1,13 @@
+# Publishes the app on this machine only. The process inside the container
+# listens on all interfaces, which is why PULSE_ALLOW_OPEN is set.
+# On a server you control, remove the 127.0.0.1 bind and set PULSE_AUTH_TOKEN.
+services:
+  pulse:
+    build: .
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./data:/data
+    environment:
+      PULSE_DATA_DIR: /data
+      PULSE_ALLOW_OPEN: "1"

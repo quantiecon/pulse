@@ -1,0 +1,18 @@
+{% if answer %}
+<section class="card answer" id="answer">
+  <p class="eyebrow">{{ "Drafted from the cited lines" if answer.model else "From the course documents" }}</p>
+  <p class="answer-text">{{ answer.text }}</p>
+  {% if answer.citations %}
+  <ol class="cites">
+    {% for cite in answer.citations %}
+    <li>
+      {% if cite.quote != answer.text %}
+      <blockquote>{{ cite.quote }}</blockquote>
+      {% endif %}
+      <p><span class="pill quiet">{{ cite.stability }}</span> {{ cite.source }} · {{ cite.locator }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+</section>
+{% endif %}

@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Connect · Pulse{% endblock %}
+{% block body %}
+<h1>Allow Pulse on this computer</h1>
+<p class="lede">bCourses takes an access token you create. CalCentral and mail open a window on this Mac, and you finish any text or Duo prompt yourself. Pulse keeps those keys in its folder and does not store your password.</p>
+
+<section class="card key-card">
+  <h2>bCourses</h2>
+  <p>{% if desk.canvas == "connected" %}<span class="pill ok">Connected</span>{% elif desk.canvas == "failed" %}<span class="pill bad">Failed</span>{% else %}<span class="pill quiet">Not connected</span>{% endif %}</p>
+  {% if desk.canvas == "failed" %}<p class="muted">Pulse tried bCourses with the saved key and it was rejected. Paste a new token.</p>{% endif %}
+  <p class="muted">Assignments, due dates, and the syllabus. Paste a token from Account → Settings. It stays on this Mac and is sent to bCourses only to confirm the account, then again when you scan.</p>
+
+  <div class="key-guide" id="canvas-key" data-expires="{{ token_expires }}" data-expires-short="{{ token_expires_short }}">
+    <div class="key-stage">
+      <div class="key-toolbar">
+        <button type="button" class="quiet" id="key-toggle" aria-pressed="true">Pause</button>
+        <p class="key-caption" id="key-caption" aria-hidden="true"></p>
+      </div>
+      <div class="browser" data-scene="account" aria-hidden="true">
+        <div class="chrome">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="url">bcourses.berkeley.edu<span class="url-path">/profile/settings</span></span>
+        </div>
+        <div class="canvas-app">
+          <div class="canvas-nav">
+            <div class="nav-account">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="8" r="3.1" fill="currentColor"/><path d="M5.2 19.2c1.3-3.1 3.5-4.6 6.8-4.6s5.5 1.5 6.8 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <span>Account</span>
+            </div>
+            <div class="nav-item">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20H4Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M10 20v-6h4v6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+              <span>Dashboard</span>
+            </div>
+            <div class="nav-item">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 4.5h9.5L19 8v11.5H6Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15.5 4.5V8H19" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+              <span>Courses</span>
+            </div>
+            <div class="nav-item">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 10h16M8 4v3M16 4v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+              <span>Calendar</span>
+            </div>
+          </div>
+          <div class="canvas-tray">
+            <p>Account</p>
+            <span>Profile</span>
+            <span class="tray-settings">Settings</span>
+            <span>Notifications</span>
+            <span>Files</span>
+            <span class="tray-logout">Logout</span>
+          </div>
+          <div class="canvas-page">
+            <div class="page-dash">
+              <h3>Dashboard</h3>
+              <div class="dash-card"></div>
+              <div class="dash-card short"></div>
+            </div>
+            <div class="page-settings">
+              <h3>Settings</h3>
+              <div class="integrations">
+                <h4>Approved Integrations</h4>
+                <p>Tokens that can access your account.</p>
+                <span class="new-token">+ New Access Token</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-shade"></div>
+          <div class="canvas-modal">
+            <div class="modal-form">
+              <header>New Access Token</header>
+              <label>Purpose</label>
+              <div class="fake-input purpose"><span class="typed"></span><span class="caret"></span></div>
+              <label>Expires</label>
+              <div class="fake-input expires">
+                <span class="ph">Optional</span>
+                <span class="ph-blank">Never expires</span>
+                <span class="typed"></span>
+                <span class="caret"></span>
+              </div>
+              <p class="expire-note"><span class="opt-blank">Leave blank and it never expires.</span> <span class="opt-dated">Or set {{ token_expires }}.</span></p>
+              <div class="modal-actions">
+                <span class="cancel">Cancel</span>
+                <span class="generate">Generate Token</span>
+              </div>
+            </div>
+            <div class="modal-token">
+              <header>Access Token</header>
+              <p>Copy it now. Canvas shows this token once.</p>
+              <div class="fake-token">1042~••••••••••••••••</div>
+              <span class="copy-token"><span class="copy-label">Copy</span><span class="copied-label">Copied</span></span>
+            </div>
+          </div>
+          <div class="cursor"><span class="ring"></span><svg viewBox="0 0 16 16" width="16" height="16"><path d="M1.2 1.2 1.2 12.4 4.4 9.6 6.7 14.2 8.4 13.4 6.1 8.8 10.4 8.6Z" fill="#1c1917" stroke="#fff" stroke-width="1"/></svg></div>
+          <div class="paste-cue">Paste below</div>
+        </div>
+      </div>
+    </div>
+    <ol class="key-steps">
+      <li data-step="0"><button type="button" data-scene="account">Open <strong>Account</strong>, then <strong>Settings</strong>.</button></li>
+      <li data-step="1"><button type="button" data-scene="integrations">Under Approved Integrations, click <strong>New Access Token</strong>.</button></li>
+      <li data-step="2"><button type="button" data-scene="purpose">Set Purpose to <strong>Pulse</strong>.</button></li>
+      <li data-step="3">
+        <p>Set Expires to one of these.</p>
+        <div class="expire-choice">
+          <button type="button" data-scene="blank">No expiration</button>
+          <button type="button" data-scene="dated">90 days · {{ token_expires }}</button>
+        </div>
+      </li>
+      <li data-step="4"><button type="button" data-scene="generate">Click <strong>Generate Token</strong> and copy it. It is shown once.</button></li>
+      <li data-step="5"><button type="button" data-scene="paste">Paste the token below.</button></li>
+    </ol>
+  </div>
+
+  {% if canvas_locked %}
+  <p class="muted"><code>PULSE_CANVAS_TOKEN</code> is set, so this page cannot replace it.</p>
+  {% else %}
+  <form method="post" action="/sign-in/canvas" class="stack key-form">
+    <label for="canvas_token">Canvas access token</label>
+    <input id="canvas_token" name="canvas_token" type="password" autocomplete="off" spellcheck="false" placeholder="{% if settings.canvas_token %}Saved on this machine. Paste a new token to replace it.{% else %}Paste the token Canvas showed once{% endif %}" required>
+    <div class="row">
+      <button type="submit">{% if settings.canvas_token %}Replace token{% else %}Save token{% endif %}</button>
+      <a class="button quiet" href="https://bcourses.berkeley.edu/profile/settings" target="_blank" rel="noopener noreferrer">Open bCourses settings</a>
+    </div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>CalCentral</h2>
+  <p>{% if desk.calcentral == "connected" %}<span class="pill ok">Connected</span>{% elif desk.calcentral == "failed" %}<span class="pill bad">Failed</span>{% else %}<span class="pill quiet">Not connected</span>{% endif %}</p>
+  {% if desk.calcentral == "failed" %}<p class="muted">Pulse tried CalCentral with the saved key and it was rejected. Allow it again.</p>{% endif %}
+  <p class="muted">Open the syllabus page, allow it, then save that page. The policy is parsed once.</p>
+  <form method="post" action="/sign-in/open">
+    <input type="hidden" name="target" value="calcentral">
+    <button class="quiet" type="submit">Allow CalCentral</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Mail</h2>
+  <p>{% if desk.mail == "connected" %}<span class="pill ok">Connected</span>{% elif desk.mail == "failed" %}<span class="pill bad">Failed</span>{% else %}<span class="pill quiet">Not connected</span>{% endif %}</p>
+  {% if desk.mail == "failed" %}<p class="muted">Pulse tried mail with the saved key and it was rejected. Allow it again, or replace the app password.</p>{% endif %}
+  <p class="muted">The same window. Finish any phone prompt, then save. Pulse reads the inbox from that sign-in. An app password in Settings is optional.</p>
+  <form method="post" action="/sign-in/open">
+    <input type="hidden" name="target" value="mail">
+    <button class="quiet" type="submit">Allow mail</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Save what you just allowed</h2>
+  <p class="muted">Sign-in window is {{ "open" if desk.window_open else "closed" }}. Pulse checks each site before it keeps a key.</p>
+  <form method="post" action="/sign-in/save">
+    <button type="submit">Save on this computer</button>
+  </form>
+</section>
+
+{% if site_courses %}
+<section class="card">
+  <h2>Course calendars</h2>
+  <p class="muted">These classes publish a schedule outside bCourses.</p>
+  <ul class="courses">
+    {% for item in site_courses %}
+    <li>
+      <a href="{{ item.site_path }}">
+        <strong>{{ item.code }}</strong>
+        <span>{{ item.site_label }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Save the open page as static policy</h2>
+  <p class="muted">Leave a syllabus open in the window. Pulse stores the words, not a screenshot.</p>
+  <form method="post" action="/sign-in/page" class="stack">
+    <label for="code">Code</label>
+    <input id="code" name="code" placeholder="CS 61A" required>
+    <label for="name">Name</label>
+    <input id="name" name="name" placeholder="Course name" required>
+    <button type="submit">Save this page</button>
+  </form>
+</section>
+
+<form method="post" action="/scan"><button type="submit">Scan now</button></form>
+{% endblock %}
+{% block extra %}
+<script src="/static/canvas-key.js"></script>
+{% endblock %}

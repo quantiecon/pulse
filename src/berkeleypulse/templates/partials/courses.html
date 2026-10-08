@@ -1,0 +1,47 @@
+<section class="card">
+  <h2>Courses</h2>
+  {% if courses %}
+  {% if editing %}
+  <form method="post" action="/courses/remove" class="stack">
+    <input type="hidden" name="next_path" value="{{ edit_next }}">
+    <p class="course-edit"><a class="button quiet" href="{{ edit_done }}">Done</a></p>
+    <p class="muted">Move classes into the order you want. Assignments and tests on the calendar follow that order. Check classes to delete them together.</p>
+    <ul class="courses editing">
+      {% for item in courses %}
+      <li>
+        <label class="choice">
+          <input type="checkbox" name="delete" value="{{ item.id }}">
+          <span>
+            <strong>{{ item.code }}</strong>
+            <span>{{ item.name }}</span>
+          </span>
+        </label>
+        {% if item.origin == "demo" %}<span class="pill quiet">Sample</span>{% endif %}
+        <span class="moves">
+          <button class="icon" type="submit" formaction="/courses/{{ item.id }}/move" name="direction" value="up" aria-label="Move {{ item.code }} up" {% if loop.first %}disabled{% endif %}>↑</button>
+          <button class="icon" type="submit" formaction="/courses/{{ item.id }}/move" name="direction" value="down" aria-label="Move {{ item.code }} down" {% if loop.last %}disabled{% endif %}>↓</button>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    <button class="quiet danger" type="submit">Delete selected</button>
+  </form>
+  {% else %}
+  <p class="course-edit"><a class="button quiet" href="{{ edit_next }}">Edit</a></p>
+  <ul class="courses">
+    {% for item in courses %}
+    <li>
+      <a href="/courses/{{ item.id }}">
+        <strong>{{ item.code }}</strong>
+        <span>{{ item.name }}</span>
+      </a>
+      {% if item.site_path %}<a href="{{ item.site_path }}">Calendar</a>{% endif %}
+      {% if item.origin == "demo" %}<span class="pill quiet">Sample</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% else %}
+  <p class="muted">None yet.</p>
+  {% endif %}
+</section>

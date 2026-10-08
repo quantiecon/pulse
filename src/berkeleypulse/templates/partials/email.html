@@ -1,0 +1,30 @@
+<li class="card email {{ email.band|lower }} {{ email.place }}">
+  <div class="email-top">
+    <span class="pill">{{ email.band }}</span>
+    {% if email.code %}<span class="pill quiet">{{ email.code }}</span>{% endif %}
+    <time>{{ email.when }}</time>
+    <form method="post" action="/emails/{{ email.id }}/dismiss" class="hide-form">
+      <button class="icon" type="submit" aria-label="Delete">×</button>
+    </form>
+  </div>
+  <h2>{{ email.subject }}</h2>
+  {% if email.place == "show" %}
+  <p class="from">{{ email.from_name or email.from_addr }}</p>
+  {% if email.snippet %}<p>{{ email.snippet }}</p>{% endif %}
+  <p class="reason">{{ email.reason }}</p>
+  {% elif email.summary %}
+  <p>{{ email.summary }}</p>
+  {% endif %}
+  {% if email.rating_label %}
+  <div class="mark-row">
+    <p class="marked">{{ email.rating_label }}</p>
+    <button class="icon switch" type="button" aria-label="Change classification">⇄</button>
+  </div>
+  {% endif %}
+  <form method="post" action="/emails/{{ email.id }}/rate" class="rates{% if email.rating %} rates-hidden{% endif %}">
+    <input type="hidden" name="next_path" value="/">
+    {% if email.rating != "more" %}<button class="quiet" name="rating" value="more" type="submit">More important</button>{% endif %}
+    {% if email.rating != "less" %}<button class="quiet" name="rating" value="less" type="submit">Less important</button>{% endif %}
+    {% if email.rating != "ignore" %}<button class="quiet" name="rating" value="ignore" type="submit">Ignore</button>{% endif %}
+  </form>
+</li>

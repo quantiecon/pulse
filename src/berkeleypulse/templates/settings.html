@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Settings · Pulse{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<p class="lede">Secrets stay in <code>config.json</code> on this machine. Leave a secret blank to keep the one already saved. A scan runs only when you press Scan.</p>
+
+<form method="post" action="/settings" class="stack settings">
+  <fieldset>
+    <legend>Canvas</legend>
+    <p class="muted">Create the token on <a href="/sign-in">Connect</a>. Leave this blank to keep the one already saved. A token reads the REST API, so a page view costs no model tokens.</p>
+    <label for="canvas_base_url">Base URL</label>
+    <input id="canvas_base_url" name="canvas_base_url" value="{{ settings.canvas_base_url }}" {% if "canvas_base_url" in locked %}disabled{% endif %}>
+    <label for="canvas_token">Access token</label>
+    <input id="canvas_token" name="canvas_token" type="password" autocomplete="off" placeholder="{% if settings.canvas_token %}Saved on this machine{% else %}Paste a token{% endif %}" {% if "canvas_token" in locked %}disabled{% endif %}>
+  </fieldset>
+
+  <fieldset>
+    <legend>Mail</legend>
+    <p class="muted">Optional. If you allowed mail from Connect, leave this blank. Otherwise use IMAP and an app password. School Gmail is <code>imap.gmail.com</code>, port 993. Pulse reads messages and does not mark them read.</p>
+    <label for="imap_host">IMAP host</label>
+    <input id="imap_host" name="imap_host" value="{{ settings.imap_host }}" {% if "imap_host" in locked %}disabled{% endif %}>
+    <label for="imap_port">Port</label>
+    <input id="imap_port" name="imap_port" value="{{ settings.imap_port }}" inputmode="numeric" {% if "imap_port" in locked %}disabled{% endif %}>
+    <label for="imap_user">Email</label>
+    <input id="imap_user" name="imap_user" value="{{ settings.imap_user }}" autocomplete="username" {% if "imap_user" in locked %}disabled{% endif %}>
+    <label for="imap_password">App password</label>
+    <input id="imap_password" name="imap_password" type="password" autocomplete="off" placeholder="{% if settings.imap_password %}Saved on this machine{% else %}App password{% endif %}" {% if "imap_password" in locked %}disabled{% endif %}>
+    <label for="imap_folder">Folder</label>
+    <input id="imap_folder" name="imap_folder" value="{{ settings.imap_folder }}" {% if "imap_folder" in locked %}disabled{% endif %}>
+  </fieldset>
+
+  <fieldset>
+    <legend>How you study</legend>
+    <label class="choice"><input type="radio" name="work_style" value="spacer" {% if settings.work_style == "spacer" %}checked{% endif %} {% if "work_style" in locked %}disabled{% endif %}> Spacer. Split the work into sessions across the days before it is due.</label>
+    <label class="choice"><input type="radio" name="work_style" value="crammer" {% if settings.work_style == "crammer" %}checked{% endif %} {% if "work_style" in locked %}disabled{% endif %}> Crammer. One block the day before.</label>
+    <label for="session_minutes">Spacer session length (minutes)</label>
+    <input id="session_minutes" name="session_minutes" value="{{ settings.session_minutes }}" inputmode="numeric" {% if "session_minutes" in locked %}disabled{% endif %}>
+    <label for="timezone_name">Timezone</label>
+    <input id="timezone_name" name="timezone_name" value="{{ settings.timezone }}" {% if "timezone" in locked %}disabled{% endif %}>
+  </fieldset>
+
+  <fieldset>
+    <legend>Optional model</legend>
+    <p class="muted">Leave this blank and Pulse still answers by quoting the syllabus. A key is used once per changed syllabus, and only to phrase an answer from lines already retrieved.</p>
+    <label for="llm_base_url">API base URL</label>
+    <input id="llm_base_url" name="llm_base_url" value="{{ settings.llm_base_url }}" {% if "llm_base_url" in locked %}disabled{% endif %}>
+    <label for="llm_model">Model</label>
+    <input id="llm_model" name="llm_model" value="{{ settings.llm_model }}" {% if "llm_model" in locked %}disabled{% endif %}>
+    <label for="llm_api_key">API key</label>
+    <input id="llm_api_key" name="llm_api_key" type="password" autocomplete="off" placeholder="{% if settings.llm_api_key %}Saved on this machine{% else %}Optional{% endif %}" {% if "llm_api_key" in locked %}disabled{% endif %}>
+  </fieldset>
+
+  <button type="submit">Save</button>
+</form>
+
+<section class="card note">
+  <h2>Pages behind a prompt</h2>
+  <p>CalCentral and mail can ask for a text message or Duo. Use <a href="/sign-in">Connect</a>, finish that prompt yourself, then save. bCourses uses the access token from that same page. A syllabus page can be stored as static policy from the window. Passwords are not stored.</p>
+</section>
+
+{% if locked %}
+<section class="card note">
+  <h2>Environment overrides</h2>
+  <ul>
+    {% for field, env_key in locked.items() %}
+    <li><code>{{ env_key }}</code> is setting {{ field }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,37 @@
+[project]
+name = "berkeleypulse"
+version = "0.1.0"
+description = "Calendar for courses, deadlines, and important mail."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi>=0.110,<0.116",
+  "uvicorn>=0.27,<0.33",
+  "jinja2>=3.1",
+  "httpx>=0.27,<0.29",
+  "python-multipart>=0.0.9",
+  "python-dotenv>=1.0",
+  "python-dateutil>=2.9",
+  "pypdf>=4.2",
+  "icalendar>=5.0,<7",
+  "stripe>=16,<17",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+pulse = "berkeleypulse.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+berkeleypulse = ["templates/*.html", "templates/partials/*.html", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

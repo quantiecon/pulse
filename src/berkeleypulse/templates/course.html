@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ course.code }} · Pulse{% endblock %}
+{% block body %}
+<p class="crumb"><a href="/">Calendar</a> / {{ course.code }}</p>
+<div class="course-title">
+  <div>
+    <h1>{{ course.code }}</h1>
+    <p>{{ course.name }}{% if course.term %} · {{ course.term }}{% endif %}</p>
+  </div>
+  <span class="pill quiet">{{ course.origin }}</span>
+</div>
+{% if site_path %}
+<p><a class="button" href="{{ site_path }}">Open the course calendar</a></p>
+{% endif %}
+<p class="muted"><span class="pill static">Static</span> Policy text was extracted once ({{ parsed_with }}). A later scan leaves it cached unless the syllabus text changes.</p>
+
+{% include "partials/answer.html" %}
+
+<div class="layout">
+  <div class="stack-lg">
+    <section class="card">
+      <h2>Ask this course</h2>
+      <form action="/courses/{{ course.id }}" method="get" class="stack">
+        <label for="q">Question</label>
+        <textarea id="q" name="q" rows="3">{{ question }}</textarea>
+        <button type="submit">Ask</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Grading</h2>
+      {% if grading %}
+      <ul class="weights">
+        {% for item in grading %}
+        <li><span>{{ item.name }}</span><strong>{{ item.weight }}%</strong></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No grading weights were found in the syllabus.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Late policy</h2>
+      {% if late_policy %}
+      <blockquote>{{ late_policy }}</blockquote>
+      {% else %}
+      <p class="muted">No late policy sentence was found.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Drop rules</h2>
+      {% if drop_rules %}
+      <ul>
+        {% for rule in drop_rules %}
+        <li>{{ rule }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No drop rule was found.</p>
+      {% endif %}
+    </section>
+
+    {% if exams or deadlines %}
+    <section class="card">
+      <h2>Dates pulled from the syllabus</h2>
+      <ul class="plain">
+        {% for exam in exams %}
+        <li><span class="pill">exam</span> {{ exam.name }} · {{ exam.when }}</li>
+        {% endfor %}
+        {% for item in deadlines %}
+        <li><span class="pill">deadline</span> {{ item.name }} · {{ item.when }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <h2>Assignments <span class="pill live">Live</span></h2>
+      {% if assignments %}
+      <ul class="assignments">
+        {% for item in assignments %}
+        <li>
+          <div>
+            <strong>{{ item.name }}</strong>
+            <p>{{ item.due }}{% if item.points %} · {{ item.points }} pts{% endif %}{% if item.group_name %} · {{ item.group_name }}{% endif %}</p>
+          </div>
+          {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No assignment feed yet. A scan fills this in after a Canvas token is saved.</p>
+      {% endif %}
+    </section>
+  </div>
+  <aside>
+    {% set edit_next = "/courses/" ~ course.id ~ "?editing=courses" %}
+    {% set edit_done = "/courses/" ~ course.id %}
+    {% include "partials/courses.html" %}
+    <form method="post" action="/courses/{{ course.id }}/hide">
+      <button class="quiet danger" type="submit">Remove from Pulse</button>
+    </form>
+  </aside>
+</div>
+{% endblock %}

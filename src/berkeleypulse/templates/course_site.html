@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ course.code }} calendar · Pulse{% endblock %}
+{% block body %}
+<p class="crumb"><a href="/">Calendar</a> / <a href="/courses/{{ course.id }}">{{ course.code }}</a> / Schedule</p>
+<div class="course-title">
+  <div>
+    <h1>{{ course.code }}</h1>
+    <p>{{ course.name }}</p>
+  </div>
+</div>
+<p class="muted">Weekly calendar from <a href="{{ site.url }}">{{ site.label }}</a>. Pulse reads that page once, then again only when it changes.</p>
+{% for week in calendar.weeks %}
+{% if week.current %}<p><a href="#current-week">Jump to this week</a></p>{% endif %}
+{% endfor %}
+
+{% if calendar.announcements %}
+<section class="card">
+  <h2>Announcements</h2>
+  <ul class="plain">
+    {% for item in calendar.announcements %}
+    <li>{{ item.text }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% for week in calendar.weeks %}
+<section class="card site-week{% if week.current %} current{% endif %}"{% if week.current %} id="current-week"{% endif %}>
+  <h2>{{ week.name }}</h2>
+  {% for day in week.days %}
+  <div class="site-day">
+    <p class="site-date">{{ day.label }}</p>
+    <ul>
+      {% for item in day["items"] %}
+      <li>
+        {% if item.label %}<span class="kind {{ item.kind }}">{{ item.label }}</span>{% endif %}
+        {% if item.href %}<a href="{{ item.href }}">{{ item.title }}</a>{% else %}<span>{{ item.title }}</span>{% endif %}
+        {% for link in item.links %}
+        <a href="{{ link.href }}">{{ link.title }}</a>
+        {% endfor %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</section>
+{% else %}
+<section class="card">
+  <p class="muted">That course site did not return a calendar. The link above still opens it.</p>
+</section>
+{% endfor %}
+{% endblock %}
