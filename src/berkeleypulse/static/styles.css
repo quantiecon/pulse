@@ -352,14 +352,25 @@ fieldset {
   padding: 8px 8px 8px 16px;
 }
 
+.toast form {
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+
 .toast button {
   width: 32px;
   height: 32px;
+  padding: 0;
   border: 0;
   border-radius: 2px;
   background: white;
   color: var(--ink);
   font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ignored { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
