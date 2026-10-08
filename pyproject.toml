@@ -35,3 +35,6 @@ berkeleypulse = ["templates/*.html", "templates/partials/*.html", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.vercel]
+entrypoint = "src.app:app"
