@@ -1,0 +1,440 @@
+:root {
+  --bg: #000;
+  --ink: #fff;
+  --muted: #c8c8c8;
+  --line: rgba(255, 255, 255, 0.16);
+  --paper: #fff;
+  --sans: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --serif: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body.gate {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 var(--sans);
+}
+
+a { color: inherit; }
+
+button, input { font: inherit; }
+
+.gate-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--bg);
+}
+
+.gate-field canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gate-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0.12) 46%, rgba(0, 0, 0, 0) 70%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.2), transparent 24%, transparent 70%, #000);
+}
+
+.gate-page {
+  position: relative;
+  z-index: 1;
+}
+
+.gate-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 28px;
+}
+
+.gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.gate-brand i {
+  width: 2px;
+  height: 22px;
+  background: #fff;
+}
+
+.gate-brand strong {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.gate-brand small {
+  display: block;
+  color: #fff;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gate-bar a.quiet {
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-decoration: none;
+}
+
+.gate-hero {
+  position: relative;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 56px;
+  padding: 112px 72px 72px;
+}
+
+.gate-hero-copy {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  margin: 0;
+}
+
+.gate-hero h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(2.2rem, 5.4vw, 5.85rem);
+  font-weight: 450;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+.gate-lede {
+  max-width: 40rem;
+  margin: 22px 0 0;
+  color: var(--ink);
+  font-size: 1.28rem;
+  line-height: 1.4;
+}
+
+.gate-signup {
+  flex: 0 1 36rem;
+  width: min(36rem, 100%);
+  margin: 0;
+  padding: 24px;
+  background: rgba(10, 10, 10, 0.72);
+  color: #f4f5f6;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+}
+
+.gate-signup label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gate-signup-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.gate-signup input {
+  flex: 1;
+  min-width: 0;
+  height: 58px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  padding: 0 16px;
+  background: #111;
+  color: #fff;
+  font-size: 1.12rem;
+}
+
+.gate-signup input::placeholder { color: rgba(255, 255, 255, 0.42); }
+
+.gate-signup input:-webkit-autofill {
+  -webkit-text-fill-color: #fff;
+  caret-color: #fff;
+  box-shadow: 0 0 0 1000px #111 inset;
+}
+
+.gate-signup input[name="code"] {
+  letter-spacing: 0.22em;
+  font-variant-numeric: tabular-nums;
+}
+
+.gate-signup input[name="code"]:placeholder-shown {
+  letter-spacing: normal;
+}
+
+.gate-signup input:focus-visible,
+.gate-signup button:focus-visible,
+.gate-lock summary:focus-visible,
+.gate-lock button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.gate-signup button {
+  height: 58px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 8px;
+  background: #f4f5f6;
+  color: #111;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gate-signup p {
+  margin: 12px 2px 0;
+  color: #b7b7b7;
+  font-size: 0.95rem;
+}
+
+.gate-signup p.error { color: #f0b4b4; }
+
+.gate-sheet {
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+
+.gate-block {
+  width: min(1040px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 64px 0;
+}
+
+.gate-block + .gate-block { padding-top: 0; }
+
+.gate-block h2 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-size: clamp(1.7rem, 3vw, 2.2rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.gate-block > p {
+  margin: 0 0 22px;
+  max-width: 40rem;
+  color: var(--muted);
+}
+
+.gate-points {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gate-points li,
+.gate-logos li,
+.gate-sources li {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(244, 245, 246, 0.03);
+}
+
+.gate-points li { padding: 18px 18px 16px; }
+
+.gate-points strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1rem;
+}
+
+.gate-points span,
+.gate-logos small,
+.gate-sources small {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.gate-logos,
+.gate-sources {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gate-logos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.gate-logos li,
+.gate-sources li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 12px 14px;
+}
+
+.gate-logos b,
+.gate-sources b {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #0a0a0a;
+  color: var(--ink);
+  font-size: 0.78rem;
+  letter-spacing: -0.03em;
+}
+
+.gate-logos li.next { opacity: 0.72; }
+
+.gate-logos em,
+.gate-sources em {
+  display: inline-block;
+  margin-left: 6px;
+  color: #fff;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gate-logos strong,
+.gate-sources strong { display: block; font-size: 0.98rem; }
+
+.gate-sources { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.gate-motion {
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(168, 168, 168, 0.42);
+  cursor: pointer;
+}
+
+.gate-motion:focus-visible { outline: none; }
+
+.gate-motion svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.gate-motion .icon-play { display: none; }
+
+.gate-motion[aria-pressed="true"] .icon-pause { display: none; }
+
+.gate-motion[aria-pressed="true"] .icon-play {
+  display: block;
+  margin-left: 2px;
+}
+
+.gate-motion:disabled { opacity: 0.65; cursor: default; }
+
+.gate-lock {
+  width: min(1040px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 0 0 28px;
+  color: var(--muted);
+}
+
+.gate-lock summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 0.84rem;
+}
+
+.gate-lock form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  max-width: 28rem;
+  margin-top: 12px;
+}
+
+.gate-lock label { font-size: 0.78rem; }
+
+.gate-lock input {
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #000;
+  color: var(--ink);
+}
+
+.gate-lock button {
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+}
+
+.gate-lock .error { color: #f0b4b4; font-size: 0.86rem; }
+
+.gate-foot {
+  width: min(1040px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 8px 0 36px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 800px) {
+  .gate-points,
+  .gate-logos,
+  .gate-sources { grid-template-columns: 1fr; }
+  .gate-hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 28px;
+    padding: 104px 20px 72px;
+  }
+  .gate-hero-copy { max-width: none; }
+  .gate-hero h1 { font-size: 8.4vw; }
+  .gate-signup { flex-basis: auto; width: 100%; }
+  .gate-signup-row { display: block; }
+  .gate-signup button { width: 100%; margin-top: 8px; }
+  .gate-bar { padding-inline: 16px; }
+  .gate-block,
+  .gate-lock,
+  .gate-foot { width: calc(100% - 32px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}

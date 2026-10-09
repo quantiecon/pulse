@@ -471,6 +471,28 @@ def test_demo_digest_hides_newsletters_and_serves_calendar():
     assert "Project 2 due tomorrow" in month.text
     assert month.text.count("calendar.ics") == 1
     assert client.get("/", params={"month": "nope"}).status_code == 200
+    week = client.get("/", params={"view": "week", "week": "2026-10-09"})
+    assert "October 2026" in week.text
+    assert "W41" in week.text
+    assert "Someday" in week.text
+    assert 'data-day="2026-10-05"' in week.text
+    assert week.text.count('class="week-line"') == 60
+    saved = client.post(
+        "/notes",
+        data={"day": "2026-10-09", "slot": "0", "body": "Remember to save"},
+        headers={"Accept": "application/json"},
+    )
+    assert saved.json()["ok"] is True
+    again = client.post(
+        "/notes",
+        data={"day": "2026-10-09", "slot": "0", "body": "Remember to save"},
+        headers={"Accept": "application/json"},
+    )
+    assert again.json()["body"] == "Remember to save"
+    with db() as conn:
+        assert conn.execute("SELECT COUNT(*) AS n FROM day_notes").fetchone()["n"] == 1
+    shown = client.get("/", params={"view": "week", "week": "2026-10-05"})
+    assert "Remember to save" in shown.text
 
 
 def test_crammer_setting_rebuilds_study_blocks():
@@ -493,7 +515,7 @@ def test_crammer_setting_rebuilds_study_blocks():
         follow_redirects=False,
     )
     assert saved.status_code == 303
-    page = client.get("/")
+    page = client.get("/", params={"view": "month"})
     assert "One study block the day before" in page.text
     assert load_settings().work_style == "crammer"
 
@@ -515,12 +537,48 @@ def test_auth_token_locks_a_public_server():
     assert main(["serve", "--host", "0.0.0.0"]) == 2
 
 
+def test_login_page_takes_a_berkeley_email_only():
+    client = TestClient(create_app())
+    page = client.get("/login")
+    assert "Your email, schoolwork," in page.text
+    assert "And calendar" in page.text
+    assert "All in one place." in page.text
+    assert "Enough browser hopping: school's hard enough." in page.text
+    assert "By Berkeley. For Berkeley." in page.text
+    assert "@berkeley.edu only" in page.text
+    assert "Gradescope" in page.text
+    assert "Data 8" in page.text
+    refused = client.post("/login/email", data={"email": "oski@gmail.com"})
+    assert refused.status_code == 200
+    assert "Use your @berkeley.edu address." in refused.text
+    subdomain = client.post("/login/email", data={"email": "ada@eecs.berkeley.edu"})
+    assert "Use your @berkeley.edu address." in subdomain.text
+    saved = client.post("/login/email", data={"email": "Ada.Lovelace@Berkeley.edu"})
+    assert 'name="code"' in saved.text
+    assert "Enter the code for ada.lovelace@berkeley.edu." in saved.text
+    with db() as conn:
+        row = conn.execute("SELECT email, created_at FROM interest").fetchone()
+    assert row["email"] == "ada.lovelace@berkeley.edu"
+    again = client.post(
+        "/login/email",
+        data={"email": "ada.lovelace@berkeley.edu"},
+        headers={"Accept": "application/json"},
+    )
+    assert again.json() == {"ok": True, "email": "ada.lovelace@berkeley.edu"}
+    with db() as conn:
+        assert conn.execute("SELECT COUNT(*) AS n FROM interest").fetchone()["n"] == 1
+        assert conn.execute("SELECT created_at FROM interest").fetchone()["created_at"] == row["created_at"]
+
+
 def test_login_wall(monkeypatch):
     monkeypatch.setenv("PULSE_AUTH_TOKEN", "secret-token")
     client = TestClient(create_app())
     blocked = client.get("/", follow_redirects=False)
     assert blocked.status_code == 303
     assert blocked.headers["location"] == "/login"
+    interest = client.post("/login/email", data={"email": "oski@berkeley.edu"})
+    assert interest.status_code == 200
+    assert "Enter the code for oski@berkeley.edu." in interest.text
     assert client.get("/health").status_code == 200
     calendar = client.get("/calendar.ics", params={"token": "secret-token"})
     assert calendar.status_code == 200
@@ -601,11 +659,15 @@ def test_sign_in_page_is_the_click_through(monkeypatch):
     client = TestClient(create_app())
     page = client.get("/sign-in")
     assert page.status_code == 200
-    assert "Allow bCourses" in page.text
-    assert "password is not stored" in page.text
+    assert "New Access Token" in page.text
+    assert "Generate Token" in page.text
+    assert "90 days" in page.text
+    assert 'action="/sign-in/canvas"' in page.text
+    assert "Allow bCourses" not in page.text
+    assert "does not store your password" in page.text
     assert "Berkeley Pulse" not in page.text
-    opened = client.post("/sign-in/open", data={"target": "canvas"}, follow_redirects=True)
-    assert "Window ready for canvas" in opened.text
+    opened = client.post("/sign-in/open", data={"target": "calcentral"}, follow_redirects=True)
+    assert "Window ready for calcentral" in opened.text
     saved = client.post(
         "/sign-in/page",
         data={"code": "CS 61A", "name": "SICP"},
@@ -613,6 +675,59 @@ def test_sign_in_page_is_the_click_through(monkeypatch):
     )
     assert "lowest quiz" in saved.text.lower()
     assert "Static" in saved.text
+
+
+def test_canvas_token_is_checked_before_it_is_saved(monkeypatch):
+    monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", lambda base, token: "Ada Lovelace")
+    client = TestClient(create_app())
+    saved = client.post("/sign-in/canvas", data={"canvas_token": "1042~secret"}, follow_redirects=True)
+    assert "Ada Lovelace" in saved.text
+    assert load_settings().canvas_token == "1042~secret"
+
+
+def test_rejected_canvas_token_is_not_saved(monkeypatch):
+    from berkeleypulse.canvas import CanvasError
+
+    def reject(base, token):
+        raise CanvasError("bCourses rejected that token. Generate a new one and paste it again.")
+
+    monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", reject)
+    client = TestClient(create_app())
+    saved = client.post("/sign-in/canvas", data={"canvas_token": "not-a-token"}, follow_redirects=True)
+    assert "rejected" in saved.text
+    assert load_settings().canvas_token == ""
+
+
+def test_canvas_token_with_spaces_is_refused(monkeypatch):
+    def explode(base, token):
+        raise AssertionError(token)
+
+    monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", explode)
+    client = TestClient(create_app())
+    saved = client.post("/sign-in/canvas", data={"canvas_token": "1042~two words"}, follow_redirects=True)
+    assert "no spaces" in saved.text
+    assert load_settings().canvas_token == ""
+
+
+def test_canvas_token_verification_reads_the_account_name(monkeypatch):
+    from berkeleypulse.canvas import verify_canvas_token
+
+    def fake_get(url, headers=None, timeout=None, follow_redirects=None):
+        assert url == "https://bcourses.berkeley.edu/api/v1/users/self"
+        assert headers["Authorization"] == "Bearer 1042~abc"
+        assert follow_redirects is False
+
+        class Response:
+            status_code = 200
+            is_redirect = False
+
+            def json(self):
+                return {"name": "Ada Lovelace"}
+
+        return Response()
+
+    monkeypatch.setattr("berkeleypulse.canvas.httpx.get", fake_get)
+    assert verify_canvas_token("https://bcourses.berkeley.edu", "1042~abc") == "Ada Lovelace"
 
 
 def test_saved_cookies_are_limited_to_school_sites():
@@ -909,7 +1024,7 @@ def test_edit_reorders_classes_and_removes_their_dates():
         )
     reschedule(now=now)
     client = TestClient(create_app())
-    page = client.get("/")
+    page = client.get("/", params={"view": "month"})
     courses_at = page.text.find('<ul class="courses">')
     assert page.text.find('href="/?editing=courses"') < courses_at
     assert page.text.find(">ZZZ 1<", courses_at) < page.text.find(">AAA 1<", courses_at)
@@ -917,7 +1032,7 @@ def test_edit_reorders_classes_and_removes_their_dates():
 
     moved = client.post(
         "/courses/%s/move" % second,
-        data={"direction": "up", "next_path": "/?editing=courses"},
+        data={"direction": "up", "next_path": "/?view=month&editing=courses"},
         follow_redirects=True,
     )
     assert "Delete selected" in moved.text
@@ -932,7 +1047,7 @@ def test_edit_reorders_classes_and_removes_their_dates():
 
     removed = client.post(
         "/courses/remove",
-        data={"delete": [str(first), str(third)], "next_path": "/?editing=courses"},
+        data={"delete": [str(first), str(third)], "next_path": "/?view=month&editing=courses"},
         follow_redirects=True,
     )
     assert "Removed 2 classes" in removed.text

@@ -1,16 +1,259 @@
-{% extends "base.html" %}
-{% block title %}Unlock · Pulse{% endblock %}
-{% block body %}
-<section class="card login">
-  <h1>This Pulse is locked</h1>
-  <p>Enter the <code>PULSE_AUTH_TOKEN</code> for this server. That token is the lock for a machine you control.</p>
-  {% if error %}
-  <p class="notice error">{{ error }}</p>
-  {% endif %}
-  <form method="post" action="/login" class="stack">
-    <label for="token">Token</label>
-    <input id="token" name="token" type="password" autocomplete="current-password" required>
-    <button type="submit">Unlock</button>
-  </form>
-</section>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Pulse · Berkeley</title>
+  <link rel="stylesheet" href="/static/gate.css?v=hero7">
+</head>
+<body class="gate">
+  <div class="gate-field" id="field" aria-hidden="true">
+    <canvas id="field-canvas"></canvas>
+    <div class="gate-shade"></div>
+  </div>
+  <div class="gate-page">
+    <header class="gate-bar">
+      <a class="gate-brand" href="/login">
+        <i aria-hidden="true"></i>
+        <span>
+          <strong>Galaxy</strong>
+          <small>Berkeley</small>
+        </span>
+      </a>
+      <a class="quiet" href="#unlock">Unlock this computer</a>
+    </header>
+
+    <section class="gate-hero">
+      <div class="gate-hero-copy">
+        <h1>Your email, schoolwork,<br>And calendar<br>All in one place.</h1>
+        <p class="gate-lede">Enough browser hopping: school's hard enough.<br>By Berkeley. For Berkeley.</p>
+      </div>
+      <form class="gate-signup" id="signup" method="post" action="{% if code_for %}/login/code{% else %}/login/email{% endif %}" data-step="{% if code_for %}code{% else %}email{% endif %}" data-landscape-control>
+          <label id="signup-label" for="signup-field">{% if code_for %}Code{% else %}Berkeley email{% endif %}</label>
+          <div class="gate-signup-row">
+            {% if code_for %}
+            <input id="signup-field" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" maxlength="6" pattern="[0-9]{6}" placeholder="6-digit code" required>
+            {% else %}
+            <input id="signup-field" name="email" type="email" inputmode="email" autocomplete="email" spellcheck="false" placeholder="you@berkeley.edu" value="{{ email }}" required>
+            {% endif %}
+            <button type="submit" id="signup-button">{% if code_for %}Verify{% else %}Sign up now{% endif %}</button>
+          </div>
+          {% if code_for %}
+          <input type="hidden" name="email" id="held-email" value="{{ code_for }}">
+          {% endif %}
+          {% if email_error %}
+          <p id="signup-note" class="error" role="alert">{{ email_error }}</p>
+          {% elif code_error %}
+          <p id="signup-note" class="error" role="alert">{{ code_error }}</p>
+          {% elif code_for %}
+          <p id="signup-note" role="status">Enter the code for {{ code_for }}.</p>
+          {% else %}
+          <p id="signup-note">@berkeley.edu only</p>
+          {% endif %}
+      </form>
+      <button class="gate-motion" id="field-motion" type="button" aria-pressed="false" aria-label="Pause motion" data-landscape-control>
+        <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.5h3.6v15H6.5zm7.4 0h3.6v15h-3.6z"/></svg>
+        <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.1v13.8l11.2-6.9z"/></svg>
+      </button>
+    </section>
+
+    <div class="gate-sheet">
+      <section class="gate-block" aria-labelledby="claims">
+        <h2 id="claims">A short list, with the reason attached.</h2>
+        <p>Berkeley work is split across a course site, a Canvas page, and an inbox that also has the club newsletter. Pulse sorts that down to the week.</p>
+        <ul class="gate-points">
+          <li>
+            <strong>Transparent</strong>
+            <span>A kept email names the sender and the reason. A due date names bCourses or the course site. Nothing is sorted in secret.</span>
+          </li>
+          <li>
+            <strong>Fast</strong>
+            <span>Nothing runs until you press Scan. Live dates refresh. A syllabus is parsed once, then cached.</span>
+          </li>
+          <li>
+            <strong>Sorted</strong>
+            <span>Assignments, a public course calendar, and the mail that matters land on the same week. The rest stays out.</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="gate-block" aria-labelledby="integrations">
+        <h2 id="integrations">Where the week comes from</h2>
+        <p>These are the connections Pulse uses today, plus the two Berkeley tools that still sit outside it.</p>
+        <ul class="gate-logos">
+          <li>
+            <b aria-hidden="true">bC</b>
+            <div><strong>bCourses</strong><small>Assignments, files, and due dates</small></div>
+          </li>
+          <li>
+            <b aria-hidden="true">CC</b>
+            <div><strong>CalCentral</strong><small>The syllabus page you leave open</small></div>
+          </li>
+          <li>
+            <b aria-hidden="true">@</b>
+            <div><strong>Gmail</strong><small>bMail, kept or dropped with a reason</small></div>
+          </li>
+          <li>
+            <b aria-hidden="true">Cal</b>
+            <div><strong>Calendar</strong><small>One .ics file for the week you built</small></div>
+          </li>
+          <li class="next">
+            <b aria-hidden="true">Gs</b>
+            <div><strong>Gradescope <em>coming soon</em></strong><small>Where a lot of the real due dates are</small></div>
+          </li>
+          <li class="next">
+            <b aria-hidden="true">Ed</b>
+            <div><strong>Ed <em>coming soon</em></strong><small>The post that quietly became a deadline</small></div>
+          </li>
+        </ul>
+      </section>
+
+      <section class="gate-block" aria-labelledby="sources">
+        <h2 id="sources">Assets from</h2>
+        <p>Some classes publish the real calendar on their own site. Pulse reads the words, not a screenshot.</p>
+        <ul class="gate-sources">
+          <li>
+            <b aria-hidden="true">D8</b>
+            <div><strong>Data 8</strong><small>data8.org is on the calendar now</small></div>
+          </li>
+          <li>
+            <b aria-hidden="true">161</b>
+            <div><strong>CS 161 <em>coming soon</em></strong><small>A slot for the security course site</small></div>
+          </li>
+          <li>
+            <b aria-hidden="true">+</b>
+            <div><strong>More to follow</strong><small>Public syllabi as departments publish them</small></div>
+          </li>
+        </ul>
+      </section>
+
+      <details class="gate-lock" id="unlock" {% if error %}open{% endif %} data-landscape-control>
+        <summary>Unlock this computer</summary>
+        <p>A server can require <code>PULSE_AUTH_TOKEN</code>. That lock is separate from the email above.</p>
+        {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+        <form method="post" action="/login">
+          <label for="token">Token</label>
+          <input id="token" name="token" type="password" autocomplete="current-password" required>
+          <button type="submit">Unlock</button>
+        </form>
+      </details>
+      <p class="gate-foot">Keys for bCourses, CalCentral, and mail stay in this computer’s Pulse folder. Pulse does not store your password.</p>
+    </div>
+  </div>
+  <script src="/static/landscape.js?v=hole3"></script>
+  <script>
+    var form = document.getElementById("signup");
+    var berkeley = /^[a-z0-9][a-z0-9._%+-]*@berkeley\.edu$/;
+
+    function signupField() {
+      return document.getElementById("signup-field");
+    }
+
+    function signupNote() {
+      return document.getElementById("signup-note");
+    }
+
+    function showNote(message, isError) {
+      var note = signupNote();
+      if (!note) return;
+      note.className = isError ? "error" : "";
+      if (isError) note.setAttribute("role", "alert");
+      else note.setAttribute("role", "status");
+      note.textContent = message;
+    }
+
+    function showCode(email) {
+      var field = signupField();
+      var label = document.getElementById("signup-label");
+      var button = document.getElementById("signup-button");
+      var held = document.getElementById("held-email");
+      form.action = "/login/code";
+      form.dataset.step = "code";
+      if (label) {
+        label.textContent = "Code";
+        label.htmlFor = "signup-field";
+      }
+      field.name = "code";
+      field.type = "text";
+      field.inputMode = "numeric";
+      field.autocomplete = "one-time-code";
+      field.spellcheck = false;
+      field.maxLength = 6;
+      field.pattern = "[0-9]{6}";
+      field.placeholder = "6-digit code";
+      field.value = "";
+      field.required = true;
+      if (button) button.textContent = "Verify";
+      if (!held) {
+        held = document.createElement("input");
+        held.type = "hidden";
+        held.name = "email";
+        held.id = "held-email";
+        form.appendChild(held);
+      }
+      held.value = email;
+      showNote("Enter the code for " + email + ".", false);
+      field.focus();
+    }
+
+    function postForm(url, body) {
+      return fetch(url, {
+        method: "POST",
+        body: body,
+        headers: { Accept: "application/json" },
+        credentials: "same-origin"
+      }).then(function (response) {
+        return response.json();
+      });
+    }
+
+    if (form) {
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var field = signupField();
+        var button = document.getElementById("signup-button");
+        if (form.dataset.step === "code") {
+          var code = field.value.trim();
+          var held = document.getElementById("held-email");
+          if (!/^[0-9]{6}$/.test(code)) {
+            showNote("Enter the 6-digit code.", true);
+            return;
+          }
+          if (button) button.disabled = true;
+          var codeBody = new FormData();
+          codeBody.set("email", held ? held.value : "");
+          codeBody.set("code", code);
+          postForm("/login/code", codeBody).then(function (data) {
+            showNote(data.error || "A code has not been sent for that address.", true);
+          }).catch(function () {
+            showNote("Could not check that code.", true);
+          }).then(function () {
+            if (button) button.disabled = false;
+          });
+          return;
+        }
+        var value = field.value.trim().toLowerCase();
+        if (!berkeley.test(value)) {
+          showNote("Use your @berkeley.edu address.", true);
+          return;
+        }
+        if (button) button.disabled = true;
+        var body = new FormData();
+        body.set("email", value);
+        postForm("/login/email", body).then(function (data) {
+          if (!data.ok) {
+            showNote(data.error || "Use your @berkeley.edu address.", true);
+            return;
+          }
+          showCode(data.email);
+        }).catch(function () {
+          showNote("Could not save that address.", true);
+        }).then(function () {
+          if (button) button.disabled = false;
+        });
+      });
+    }
+  </script>
+</body>
+</html>

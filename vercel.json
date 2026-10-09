@@ -1,5 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "lockincal.com" }],
+      "destination": "https://galaxycal.com/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.lockincal.com" }],
+      "destination": "https://galaxycal.com/:path*",
+      "permanent": true
+    }
+  ],
   "functions": {
     "src/app.py": {
       "includeFiles": "src/berkeleypulse/**"

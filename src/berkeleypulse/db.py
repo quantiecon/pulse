@@ -115,6 +115,18 @@ CREATE TABLE IF NOT EXISTS billing (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS interest (
+  email TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS day_notes (
+  day TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  PRIMARY KEY (day, slot)
+);
+
 CREATE TABLE IF NOT EXISTS notices (
   course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
   external_id TEXT NOT NULL,

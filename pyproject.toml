@@ -31,7 +31,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-berkeleypulse = ["templates/*.html", "templates/partials/*.html", "static/*"]
+berkeleypulse = ["templates/*.html", "templates/partials/*.html", "static/*", "static/guide/*", "static/logos/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

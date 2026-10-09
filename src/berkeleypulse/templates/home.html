@@ -40,15 +40,69 @@
 {% include "partials/answer.html" %}
 
 {% if courses or emails or recent %}
-<section class="calendar-board" aria-label="Month">
+<section class="calendar-board{% if view == 'week' %} week-mode{% endif %}" aria-label="{{ 'Week' if view == 'week' else 'Month' }}">
+  {% if view == 'week' %}
+  <div class="cal-head week-top">
+    <h1>{{ week.label }} <span class="week-num">{{ week.number }}</span></h1>
+    <div class="cal-tools">
+      <p class="week-save" role="status"></p>
+      <div class="view-toggle" role="group" aria-label="Calendar view">
+        <a class="on" href="/?view=week&amp;week={{ week.key }}" aria-current="page">Week</a>
+        <a href="/?view=month&amp;month={{ week.month_key }}">Month</a>
+      </div>
+      <a class="cal-round download" href="/calendar.ics?download=1" aria-label="Download calendar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 18h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="cal-round" href="/?view=week&amp;week={{ week.prev }}" aria-label="Previous week">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 8 12l6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="cal-round" href="/?view=week&amp;week={{ week.next }}" aria-label="Next week">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </div>
+  <div class="week-scroll">
+    <div class="week-columns">
+      {% for day in week.days %}
+      <section class="week-day{% if day.today %} today{% endif %}">
+        <header>
+          <strong>{{ day.number }} <small>{{ day.month }}</small></strong>
+          <span>{{ day.weekday }}</span>
+        </header>
+        <ul class="week-events">
+          {% for item in day["items"] %}
+          <li class="{{ item.kind }}">{{ item.label }}</li>
+          {% endfor %}
+          {% if day.extra %}<li class="more">+{{ day.extra }}</li>{% endif %}
+        </ul>
+        {% for line in day.lines %}
+        <input class="week-line" data-day="{{ day.iso }}" data-slot="{{ loop.index0 }}" value="{{ line }}" maxlength="240" aria-label="{{ day.weekday }} {{ day.number }} line {{ loop.index }}" autocomplete="off" spellcheck="false">
+        {% endfor %}
+      </section>
+      {% endfor %}
+    </div>
+  </div>
+  <section class="someday">
+    <h2>Someday</h2>
+    {% for line in week.someday %}
+    <input class="week-line" data-day="someday" data-slot="{{ loop.index0 }}" value="{{ line }}" maxlength="240" aria-label="Someday line {{ loop.index }}" autocomplete="off" spellcheck="false">
+    {% endfor %}
+  </section>
+  {% else %}
   <div class="month">
     <div class="cal-head">
       <div class="cal-title">
-        <a class="cal-nav" href="/?month={{ calendar.prev }}" aria-label="Previous month">‹</a>
+        <a class="cal-nav" href="/?view=month&amp;month={{ calendar.prev }}" aria-label="Previous month">‹</a>
         <h1>{{ calendar.label }}</h1>
-        <a class="cal-nav" href="/?month={{ calendar.next }}" aria-label="Next month">›</a>
+        <a class="cal-nav" href="/?view=month&amp;month={{ calendar.next }}" aria-label="Next month">›</a>
       </div>
-      <p><a href="/calendar.ics?download=1">Download calendar</a></p>
+      <div class="cal-tools">
+        <div class="view-toggle" role="group" aria-label="Calendar view">
+          <a href="/?view=week&amp;week={{ calendar.week }}">Week</a>
+          <a class="on" href="/?view=month&amp;month={{ calendar.key }}" aria-current="page">Month</a>
+        </div>
+        <p><a href="/calendar.ics?download=1">Download calendar</a></p>
+      </div>
     </div>
     <div class="cal-grid">
       {% for name in calendar.weekdays %}
@@ -109,6 +163,7 @@
       {% endif %}
     </section>
   </aside>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -211,4 +266,35 @@
   </aside>
 </div>
 </div>
+<script>
+  var lines = document.querySelectorAll(".week-line");
+  var note = document.querySelector(".week-save");
+  lines.forEach(function (input) {
+    var timer = 0;
+    function save() {
+      var body = new FormData();
+      body.set("day", input.getAttribute("data-day"));
+      body.set("slot", input.getAttribute("data-slot"));
+      body.set("body", input.value);
+      fetch("/notes", {
+        method: "POST",
+        body: body,
+        headers: { Accept: "application/json" },
+        credentials: "same-origin"
+      }).then(function (response) {
+        return response.json();
+      }).then(function (data) {
+        if (!note) return;
+        note.textContent = data.ok ? "Saved" : "Could not save";
+      }).catch(function () {
+        if (note) note.textContent = "Could not save";
+      });
+    }
+    input.addEventListener("input", function () {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(save, 400);
+    });
+    input.addEventListener("change", save);
+  });
+</script>
 {% endblock %}

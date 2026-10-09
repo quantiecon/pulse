@@ -56,7 +56,7 @@ def create_app() -> FastAPI:
 
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, error: str = ""):
-        return _render(request, "login.html", {"error": error})
+        return _render(request, "login.html", _login_context(error=error))
 
     @app.post("/login", response_class=HTMLResponse)
     def login(request: Request, token: str = Form("")):
@@ -65,7 +65,43 @@ def create_app() -> FastAPI:
             response = RedirectResponse("/", status_code=303)
             response.set_cookie("pulse_auth", expected, httponly=True, samesite="lax", path="/")
             return response
-        return _render(request, "login.html", {"error": "That token does not match."})
+        return _render(request, "login.html", _login_context(error="That token does not match."))
+
+    @app.post("/login/email")
+    def save_login_email(request: Request, email: str = Form("")):
+        address = _berkeley_email(email)
+        wants_json = _wants_json(request)
+        if not address:
+            message = "Use your @berkeley.edu address."
+            if wants_json:
+                return JSONResponse({"ok": False, "error": message})
+            return _render(request, "login.html", _login_context(email=email.strip(), email_error=message))
+        with db() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO interest(email, created_at) VALUES(?, ?)",
+                (address, datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")),
+            )
+        if wants_json:
+            return JSONResponse({"ok": True, "email": address})
+        return _render(request, "login.html", _login_context(code_for=address))
+
+    @app.post("/login/code")
+    def submit_login_code(request: Request, email: str = Form(""), code: str = Form("")):
+        address = _berkeley_email(email)
+        wants_json = _wants_json(request)
+        if not address:
+            message = "Use your @berkeley.edu address."
+            if wants_json:
+                return JSONResponse({"ok": False, "error": message})
+            return _render(request, "login.html", _login_context(email=email.strip(), email_error=message))
+        digits = "".join(ch for ch in code if ch.isdigit())
+        if digits != code.strip() or len(digits) != 6:
+            message = "Enter the 6-digit code."
+        else:
+            message = "A code has not been sent for that address."
+        if wants_json:
+            return JSONResponse({"ok": False, "error": message, "email": address})
+        return _render(request, "login.html", _login_context(code_for=address, code_error=message))
 
     @app.post("/billing/checkout")
     def billing_checkout(request: Request):
@@ -112,10 +148,36 @@ def create_app() -> FastAPI:
         editing: str = "",
         month: str = "",
         day: str = "",
+        view: str = "",
+        week: str = "",
     ):
-        context = _home_context(notice, level, q, course, deleted, month, day)
+        context = _home_context(notice, level, q, course, deleted, month, day, view, week)
         context["editing"] = editing == "courses"
         return _render(request, "home.html", context)
+
+    @app.post("/notes")
+    def save_note(request: Request, day: str = Form(""), slot: str = Form(""), body: str = Form("")):
+        target = _note_day(day)
+        index = _note_slot(slot)
+        text = " ".join(body.split())[:240]
+        wants_json = _wants_json(request)
+        limit = SOMEDAY_SLOTS if target == "someday" else DAY_SLOTS
+        if not target or index is None or index >= limit:
+            message = "That note could not be saved."
+            if wants_json:
+                return JSONResponse({"ok": False, "error": message})
+            return _redirect("/", message, "error")
+        with db() as conn:
+            if text:
+                conn.execute(
+                    "INSERT INTO day_notes(day, slot, body) VALUES(?, ?, ?) ON CONFLICT(day, slot) DO UPDATE SET body = excluded.body",
+                    (target, index, text),
+                )
+            else:
+                conn.execute("DELETE FROM day_notes WHERE day = ? AND slot = ?", (target, index))
+        if wants_json:
+            return JSONResponse({"ok": True, "day": target, "slot": index, "body": text})
+        return _redirect("/")
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, notice: str = "", level: str = ""):
@@ -419,7 +481,7 @@ def _install_auth(app: FastAPI) -> None:
     @app.middleware("http")
     async def check_auth(request: Request, call_next):
         path = request.url.path
-        if path in {"/login", "/health", "/favicon.ico", "/billing/webhook"} or path.startswith("/static"):
+        if path in {"/login", "/login/email", "/login/code", "/health", "/favicon.ico", "/billing/webhook"} or path.startswith("/static"):
             return await call_next(request)
         cookie = request.cookies.get("pulse_auth", "")
         if _same_secret(cookie, token):
@@ -429,6 +491,39 @@ def _install_auth(app: FastAPI) -> None:
         if path == "/login":
             return await call_next(request)
         return RedirectResponse("/login", status_code=303)
+
+
+def _wants_json(request: Request) -> bool:
+    return "application/json" in request.headers.get("accept", "")
+
+
+def _login_context(
+    error: str = "",
+    email: str = "",
+    email_error: str = "",
+    code_for: str = "",
+    code_error: str = "",
+) -> dict:
+    return {
+        "error": error,
+        "email": email,
+        "email_error": email_error,
+        "code_for": code_for,
+        "code_error": code_error,
+    }
+
+
+def _berkeley_email(value: str) -> str:
+    address = value.strip().lower()
+    local, sep, domain = address.partition("@")
+    if sep != "@" or domain != "berkeley.edu" or not local or "@" in local:
+        return ""
+    if not local[0].isalnum():
+        return ""
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789._%+-")
+    if any(char not in allowed for char in local):
+        return ""
+    return address
 
 
 def _same_secret(given: str, expected: str) -> bool:
@@ -506,17 +601,21 @@ def _home_context(
     deleted: str = "",
     month: str = "",
     day: str = "",
+    view: str = "",
+    week: str = "",
 ) -> dict:
     settings = load_settings()
     tz = ZoneInfo(settings.timezone)
     now = datetime.now(tz)
     course_id = int(course) if str(course).isdigit() else None
+    chosen = _calendar_view(view, month)
     with db() as conn:
         answer = answer_question(conn, question, settings, course_id) if question.strip() else None
         rescore_emails(conn)
         emails, quiet, ignored = _classify_mail(conn, tz)
         grouped = _grouped_events(conn, tz, now)
         calendar, selected_day = _month_calendar(conn, tz, now, month, day)
+        planner = _week_calendar(conn, tz, now, week or calendar["week"])
         courses = _course_list(conn)
         demo = conn.execute(
             "SELECT COUNT(*) AS n FROM courses WHERE origin = 'demo' AND hidden = 0"
@@ -534,7 +633,9 @@ def _home_context(
         "ignored": ignored,
         "deleted": _deleted_target(deleted),
         "days": grouped,
+        "view": chosen,
         "calendar": calendar,
+        "week": planner,
         "selected_day": selected_day,
         "recent": recent,
         "courses": courses,
@@ -944,9 +1045,104 @@ def _month_calendar(conn, tz, now, month_key: str, day_key: str):
             "next": "%04d-%02d" % (following.year, following.month),
             "weekdays": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
             "weeks": weeks,
+            "week": _week_start(selected or (today if first <= today <= last else first)).isoformat(),
         },
         selected_day,
     )
+
+
+DAY_SLOTS = 8
+SOMEDAY_SLOTS = 4
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def _calendar_view(view: str, month: str) -> str:
+    if view == "month" or (view != "week" and month):
+        return "month"
+    return "week"
+
+
+def _week_start(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _week_calendar(conn, tz, now, week_key: str):
+    today = now.astimezone(tz).date()
+    monday = _week_start(_parse_day(week_key) or today)
+    sunday = monday + timedelta(days=6)
+    thursday = monday + timedelta(days=3)
+    by_day = {}
+    for item in _event_items(conn, tz):
+        if monday <= item["day_sort"] <= sunday:
+            by_day.setdefault(item["day_sort"], []).append(item)
+    for bucket in by_day.values():
+        bucket.sort(key=lambda item: (item["course_order"], item["sort"], item["title"]))
+    notes = _notes_for(conn, [monday + timedelta(days=offset) for offset in range(7)])
+    days = []
+    for offset in range(7):
+        cursor = monday + timedelta(days=offset)
+        items = by_day.get(cursor, [])
+        days.append(
+            {
+                "iso": cursor.isoformat(),
+                "number": cursor.day,
+                "month": cursor.strftime("%b"),
+                "weekday": _WEEKDAYS[offset],
+                "today": cursor == today,
+                "items": items[:3],
+                "extra": max(0, len(items) - 3),
+                "lines": notes.get(cursor.isoformat(), []),
+            }
+        )
+    return {
+        "label": thursday.strftime("%B %Y"),
+        "number": "W%d" % thursday.isocalendar()[1],
+        "key": monday.isoformat(),
+        "prev": (monday - timedelta(days=7)).isoformat(),
+        "next": (monday + timedelta(days=7)).isoformat(),
+        "month_key": "%04d-%02d" % (thursday.year, thursday.month),
+        "days": days,
+        "someday": notes.get("someday", []),
+    }
+
+
+def _notes_for(conn, days) -> dict:
+    keys = [day.isoformat() for day in days] + ["someday"]
+    marks = ",".join("?" for _ in keys)
+    rows = conn.execute(
+        "SELECT day, slot, body FROM day_notes WHERE day IN (%s) ORDER BY slot" % marks,
+        keys,
+    ).fetchall()
+    grouped = {key: [] for key in keys}
+    for row in rows:
+        grouped[row["day"]].append((int(row["slot"]), row["body"]))
+    filled = {}
+    for key, pairs in grouped.items():
+        count = SOMEDAY_SLOTS if key == "someday" else DAY_SLOTS
+        lines = [""] * count
+        for slot, body in pairs:
+            if 0 <= slot < count:
+                lines[slot] = body
+        filled[key] = lines
+    return filled
+
+
+def _note_day(value: str) -> str:
+    if value == "someday":
+        return value
+    day = _parse_day(value)
+    if day is None:
+        return ""
+    return day.isoformat()
+
+
+def _note_slot(value: str):
+    if not str(value).isdigit():
+        return None
+    slot = int(value)
+    if 0 <= slot < DAY_SLOTS:
+        return slot
+    return None
 
 
 def _parse_month(value: str, today: date) -> date:
