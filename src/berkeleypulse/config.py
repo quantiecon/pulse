@@ -38,14 +38,33 @@ def project_root() -> Path:
 
 
 def data_dir() -> Path:
-    override = os.environ.get("PULSE_DATA_DIR")
-    path = Path(override) if override else project_root() / "data"
-    path.mkdir(parents=True, exist_ok=True)
+    override = os.environ.get("PULSE_DATA_DIR", "").strip()
+    preferred = Path(override) if override else project_root() / "data"
+    if _prepare_dir(preferred):
+        return preferred
+    # Vercel’s deployment filesystem is read-only outside /tmp. An explicit
+    # PULSE_DATA_DIR still has to succeed on its own.
+    if override:
+        preferred.mkdir(parents=True, exist_ok=True)
+        return preferred
+    fallback = Path(os.environ.get("TMPDIR") or "/tmp") / "pulse"
+    fallback.mkdir(parents=True, exist_ok=True)
     try:
-        os.chmod(path, 0o700)
+        os.chmod(fallback, 0o700)
     except OSError:
         pass
-    return path
+    return fallback
+
+
+def _prepare_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        if not os.access(path, os.W_OK):
+            return False
+        os.chmod(path, 0o700)
+    except OSError:
+        return False
+    return True
 
 
 @dataclass

@@ -831,6 +831,29 @@ def test_save_reads_cookies_from_the_open_page(monkeypatch):
     assert cookies[0]["name"] == "canvas_session"
 
 
+def test_login_renders_when_the_project_data_dir_is_read_only(monkeypatch, tmp_path):
+    from berkeleypulse.config import data_dir
+
+    root = tmp_path / "app"
+    root.mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname = 'pulse'\n")
+    (root / "src" / "berkeleypulse").mkdir(parents=True)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.delenv("PULSE_DATA_DIR", raising=False)
+    monkeypatch.setenv("TMPDIR", str(scratch))
+    monkeypatch.setattr("berkeleypulse.config.project_root", lambda: root)
+    root.chmod(0o555)
+    try:
+        page = TestClient(create_app()).get("/login")
+        stored = data_dir()
+    finally:
+        root.chmod(0o755)
+    assert page.status_code == 200
+    assert stored == scratch / "pulse"
+    assert (stored / "pulse.db").exists()
+
+
 def test_permissions_are_read_from_the_local_file():
     from berkeleypulse.config import data_dir
     from berkeleypulse.desk import session_status
