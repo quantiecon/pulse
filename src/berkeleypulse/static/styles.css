@@ -108,9 +108,10 @@ code {
 }
 
 .mark {
-  width: 2px;
-  height: 22px;
-  background: #fff;
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex: none;
 }
 
 nav, .top-actions { display: flex; gap: 16px; align-items: center; }
@@ -1058,18 +1059,14 @@ blockquote {
 
 .key-form { margin-top: 8px; }
 
+.key-slider { min-width: 0; }
+
 .key-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
   margin: 0;
   padding: 0;
   list-style: none;
-  counter-reset: step;
   min-width: 0;
 }
-
-.key-steps li { counter-increment: step; }
 
 .key-steps figure { margin: 0; }
 
@@ -1088,9 +1085,58 @@ blockquote {
   line-height: 1.4;
 }
 
-.key-steps figcaption::before {
-  content: counter(step) ". ";
+.key-steps figcaption span {
   font-weight: 600;
+}
+
+.key-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.key-arrow {
+  min-width: 4.6rem;
+}
+
+.key-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.key-dots {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.key-dots button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: transparent;
+  display: grid;
+  place-items: center;
+}
+
+.key-dots button::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+.key-dots button.is-current::before,
+.key-dots button[aria-selected="true"]::before {
+  background: #fff;
+  border-color: #fff;
 }
 
 @media (max-width: 860px) {
@@ -1107,5 +1153,5 @@ blockquote {
   .site-day { grid-template-columns: 1fr; }
   .scan-row form { margin-top: 10px; }
   .wrap > .card.key-card { display: block; }
-  .key-steps { margin-top: 16px; }
+  .key-slider { margin-top: 16px; }
 }

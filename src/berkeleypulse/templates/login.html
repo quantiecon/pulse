@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>Pulse · Berkeley</title>
-  <link rel="stylesheet" href="/static/gate.css?v=hero7">
+  <link rel="icon" href="/static/logos/galaxy.svg?v=favicon" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/gate.css?v=mark">
 </head>
 <body class="gate">
   <div class="gate-field" id="field" aria-hidden="true">
@@ -14,8 +15,8 @@
   </div>
   <div class="gate-page">
     <header class="gate-bar">
-      <a class="gate-brand" href="/login">
-        <i aria-hidden="true"></i>
+      <a class="gate-brand" href="/">
+        <img class="mark" src="/static/logos/galaxy.svg?v=shade" alt="" width="28" height="28">
         <span>
           <strong>Galaxy</strong>
           <small>Berkeley</small>
@@ -225,7 +226,17 @@
           codeBody.set("email", held ? held.value : "");
           codeBody.set("code", code);
           postForm("/login/code", codeBody).then(function (data) {
-            showNote(data.error || "A code has not been sent for that address.", true);
+            if (!data.ok) {
+              showNote(data.error || "That code does not match.", true);
+              return;
+            }
+            if (data.next === "/") {
+              window.location.assign("/");
+              return;
+            }
+            showNote("That address is saved. Unlock this computer to open the calendar.", false);
+            var lock = document.getElementById("unlock");
+            if (lock) lock.open = true;
           }).catch(function () {
             showNote("Could not check that code.", true);
           }).then(function () {
@@ -246,7 +257,11 @@
             showNote(data.error || "Use your @berkeley.edu address.", true);
             return;
           }
-          showCode(data.email);
+          if (data.next === "code") {
+            showCode(data.email || value);
+            return;
+          }
+          showNote("Could not send a code.", true);
         }).catch(function () {
           showNote("Could not save that address.", true);
         }).then(function () {

@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 
-from berkeleypulse.app import create_app
+from berkeleypulse.app import create_app, send_login_code as deliver_login_code
 from berkeleypulse.billing import apply_event, billing_state, checkout_params, push_catalog
 from berkeleypulse.canvas import next_url
 from berkeleypulse.cli import main
@@ -58,7 +58,36 @@ def isolate(tmp_path, monkeypatch):
     monkeypatch.setenv("STRIPE_PRICE_ID", "")
     monkeypatch.setenv("STRIPE_PORTAL_CONFIGURATION", "")
     monkeypatch.setenv("STRIPE_BILLING", "")
+    _remember_login_code.last = ""
+    monkeypatch.setattr("berkeleypulse.app.send_login_code", _remember_login_code)
     return tmp_path
+
+
+def _remember_login_code(address: str, code: str) -> None:
+    _remember_login_code.last = code
+
+
+_remember_login_code.last = ""
+
+
+def browser() -> TestClient:
+    from berkeleypulse.app import send_login_code
+
+    client = TestClient(create_app())
+    asked = client.post(
+        "/login/email",
+        data={"email": "oski@berkeley.edu"},
+        follow_redirects=False,
+    )
+    assert asked.status_code == 200
+    verified = client.post(
+        "/login/code",
+        data={"email": "oski@berkeley.edu", "code": send_login_code.last},
+        follow_redirects=False,
+    )
+    assert verified.status_code == 303
+    assert verified.headers["location"] == "/"
+    return client
 
 
 def test_scores_deadline_mail_and_skips_newsletters():
@@ -135,7 +164,7 @@ def test_ratings_teach_later_mail_where_to_sit():
         )
         email_id = conn.execute("SELECT id FROM emails WHERE message_id = 'learn-1'").fetchone()["id"]
         apply_email_rating(conn, email_id, "ignore")
-    client = TestClient(create_app())
+    client = browser()
     page = client.get("/")
     assert "Weekly mixer" in page.text
     assert "Marked ignored" in page.text
@@ -440,7 +469,7 @@ def test_demo_digest_hides_newsletters_and_serves_calendar():
             """,
             ("2026-10-01T16:00:00-07:00", "2026-10-01T16:00:00-07:00"),
         )
-    client = TestClient(create_app())
+    client = browser()
     page = client.get("/")
     assert page.status_code == 200
     assert "Project 2 due tomorrow" in page.text
@@ -497,7 +526,7 @@ def test_demo_digest_hides_newsletters_and_serves_calendar():
 
 def test_crammer_setting_rebuilds_study_blocks():
     seed_demo(now=datetime(2026, 10, 1, 9, tzinfo=TZ))
-    client = TestClient(create_app())
+    client = browser()
     saved = client.post(
         "/settings",
         data={
@@ -521,7 +550,7 @@ def test_crammer_setting_rebuilds_study_blocks():
 
 
 def test_manual_course_from_the_form():
-    client = TestClient(create_app())
+    client = browser()
     created = client.post(
         "/courses",
         data={"code": "CS 61A", "name": "SICP", "syllabus": SYLLABUS},
@@ -533,12 +562,15 @@ def test_manual_course_from_the_form():
 
 
 def test_auth_token_locks_a_public_server():
-    client = TestClient(create_app())
+    client = browser()
     assert main(["serve", "--host", "0.0.0.0"]) == 2
 
 
 def test_login_page_takes_a_berkeley_email_only():
     client = TestClient(create_app())
+    locked = client.get("/", follow_redirects=False)
+    assert locked.status_code == 303
+    assert locked.headers["location"] == "/login"
     page = client.get("/login")
     assert "Your email, schoolwork," in page.text
     assert "And calendar" in page.text
@@ -553,9 +585,38 @@ def test_login_page_takes_a_berkeley_email_only():
     assert "Use your @berkeley.edu address." in refused.text
     subdomain = client.post("/login/email", data={"email": "ada@eecs.berkeley.edu"})
     assert "Use your @berkeley.edu address." in subdomain.text
-    saved = client.post("/login/email", data={"email": "Ada.Lovelace@Berkeley.edu"})
-    assert 'name="code"' in saved.text
-    assert "Enter the code for ada.lovelace@berkeley.edu." in saved.text
+    asked = client.post(
+        "/login/email",
+        data={"email": "Ada.Lovelace@Berkeley.edu"},
+        follow_redirects=False,
+    )
+    assert asked.status_code == 200
+    assert "Enter the code for ada.lovelace@berkeley.edu." in asked.text
+    assert "pulse_session" not in asked.cookies
+    still = client.get("/", follow_redirects=False)
+    assert still.status_code == 303
+    assert still.headers["location"] == "/login"
+    from berkeleypulse.app import send_login_code
+
+    wrong_code = "000000" if send_login_code.last != "000000" else "000001"
+    wrong = client.post(
+        "/login/code",
+        data={"email": "ada.lovelace@berkeley.edu", "code": wrong_code},
+        follow_redirects=False,
+    )
+    assert wrong.status_code == 200
+    assert "does not match" in wrong.text
+    verified = client.post(
+        "/login/code",
+        data={"email": "ada.lovelace@berkeley.edu", "code": send_login_code.last},
+        follow_redirects=False,
+    )
+    assert verified.status_code == 303
+    assert verified.headers["location"] == "/"
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "Open sign-in" in home.text
+    assert "Sign up now" not in home.text
     with db() as conn:
         row = conn.execute("SELECT email, created_at FROM interest").fetchone()
     assert row["email"] == "ada.lovelace@berkeley.edu"
@@ -564,7 +625,7 @@ def test_login_page_takes_a_berkeley_email_only():
         data={"email": "ada.lovelace@berkeley.edu"},
         headers={"Accept": "application/json"},
     )
-    assert again.json() == {"ok": True, "email": "ada.lovelace@berkeley.edu"}
+    assert again.json() == {"ok": True, "email": "ada.lovelace@berkeley.edu", "next": "code"}
     with db() as conn:
         assert conn.execute("SELECT COUNT(*) AS n FROM interest").fetchone()["n"] == 1
         assert conn.execute("SELECT created_at FROM interest").fetchone()["created_at"] == row["created_at"]
@@ -576,9 +637,25 @@ def test_login_wall(monkeypatch):
     blocked = client.get("/", follow_redirects=False)
     assert blocked.status_code == 303
     assert blocked.headers["location"] == "/login"
-    interest = client.post("/login/email", data={"email": "oski@berkeley.edu"})
-    assert interest.status_code == 200
-    assert "Enter the code for oski@berkeley.edu." in interest.text
+    interest = client.post(
+        "/login/email",
+        data={"email": "oski@berkeley.edu"},
+        headers={"Accept": "application/json"},
+    )
+    assert interest.json()["next"] == "code"
+    assert "pulse_session" not in interest.cookies
+    from berkeleypulse.app import send_login_code
+
+    coded = client.post(
+        "/login/code",
+        data={"email": "oski@berkeley.edu", "code": send_login_code.last},
+        follow_redirects=False,
+    )
+    assert coded.status_code == 303
+    assert coded.headers["location"] == "/login"
+    still = client.get("/", follow_redirects=False)
+    assert still.status_code == 303
+    assert still.headers["location"] == "/login"
     assert client.get("/health").status_code == 200
     calendar = client.get("/calendar.ics", params={"token": "secret-token"})
     assert calendar.status_code == 200
@@ -587,6 +664,66 @@ def test_login_wall(monkeypatch):
     good = client.post("/login", data={"token": "secret-token"}, follow_redirects=False)
     assert good.status_code == 303
     assert client.get("/").status_code == 200
+
+
+def test_unsigned_visitor_stops_at_the_login_page():
+    client = TestClient(create_app())
+    hidden = (
+        "/",
+        "/settings",
+        "/sign-in",
+        "/digest.json",
+        "/calendar.ics",
+        "/docs",
+        "/openapi.json",
+        "/static/styles.css",
+        "/static/guide/account.png",
+    )
+    for path in hidden:
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 303, path
+        assert response.headers["location"] == "/login"
+    assert client.get("/login").status_code == 200
+    assert "text/css" in client.get("/static/gate.css").headers["content-type"]
+    assert client.get("/static/landscape.js").status_code == 200
+    assert "svg" in client.get("/static/logos/galaxy.svg").headers["content-type"]
+    assert client.get("/favicon.ico").status_code == 200
+    assert client.get("/health").json() == {"ok": True}
+
+
+def test_login_code_is_emailed_through_resend(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 200
+
+    def post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["authorization"] = headers["Authorization"]
+        captured["agent"] = headers["User-Agent"]
+        captured["json"] = json
+        return Response()
+
+    monkeypatch.setenv("RESEND_SECRET", "re_test_secret")
+    monkeypatch.setenv("RESEND_FROM", "Galaxy <login@galaxycal.com>")
+    monkeypatch.setattr("berkeleypulse.app.httpx.post", post)
+    deliver_login_code("oski@berkeley.edu", "123456")
+    assert captured["url"] == "https://api.resend.com/emails"
+    assert captured["authorization"] == "Bearer re_test_secret"
+    assert captured["agent"] == "Galaxy/1.0"
+    assert captured["json"]["from"] == "Galaxy <login@galaxycal.com>"
+    assert captured["json"]["to"] == ["oski@berkeley.edu"]
+    assert "123456" in captured["json"]["text"]
+    monkeypatch.setattr("berkeleypulse.app.send_login_code", deliver_login_code)
+    monkeypatch.delenv("RESEND_SECRET", raising=False)
+    client = TestClient(create_app())
+    refused = client.post(
+        "/login/email",
+        data={"email": "oski@berkeley.edu"},
+        headers={"Accept": "application/json"},
+    )
+    assert refused.json() == {"ok": False, "error": "Sign-in email is not configured."}
+    assert client.get("/", follow_redirects=False).headers["location"] == "/login"
 
 
 def test_live_assignment_text_does_not_reparse_static_policy():
@@ -615,7 +752,7 @@ def test_live_assignment_text_does_not_reparse_static_policy():
 
 def test_scan_labels_live_and_static_and_drops_the_old_name():
     seed_demo(now=datetime(2026, 10, 1, 9, tzinfo=TZ))
-    client = TestClient(create_app())
+    client = browser()
     page = client.get("/")
     assert "Berkeley Pulse" not in page.text
     assert "Scan now" in page.text
@@ -631,13 +768,13 @@ def test_scan_labels_live_and_static_and_drops_the_old_name():
 
 
 def test_posthog_stays_off_until_a_key_is_set():
-    page = TestClient(create_app()).get("/")
+    page = browser().get("/")
     assert "posthog.init" not in page.text
 
 
 def test_posthog_ignores_a_secret_key(monkeypatch):
     monkeypatch.setenv("PULSE_POSTHOG_KEY", "phs_secret")
-    page = TestClient(create_app()).get("/")
+    page = browser().get("/")
     assert "posthog.init" not in page.text
     assert "phs_secret" not in page.text
 
@@ -645,7 +782,7 @@ def test_posthog_ignores_a_secret_key(monkeypatch):
 def test_posthog_counts_pageviews_without_recording_the_page(monkeypatch):
     monkeypatch.setenv("PULSE_POSTHOG_KEY", "phc_test")
     monkeypatch.setenv("PULSE_POSTHOG_HOST", "https://us.i.posthog.com")
-    page = TestClient(create_app()).get("/")
+    page = browser().get("/")
     assert "phc_test" in page.text
     assert "capture_pageview: true" in page.text
     assert "autocapture: false" in page.text
@@ -656,7 +793,7 @@ def test_posthog_counts_pageviews_without_recording_the_page(monkeypatch):
 def test_sign_in_page_is_the_click_through(monkeypatch):
     monkeypatch.setattr("berkeleypulse.app.open_desk", lambda target: "Window ready for %s." % target)
     monkeypatch.setattr("berkeleypulse.app.read_page_text", lambda: SYLLABUS)
-    client = TestClient(create_app())
+    client = browser()
     page = client.get("/sign-in")
     assert page.status_code == 200
     assert "New Access Token" in page.text
@@ -679,7 +816,7 @@ def test_sign_in_page_is_the_click_through(monkeypatch):
 
 def test_canvas_token_is_checked_before_it_is_saved(monkeypatch):
     monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", lambda base, token: "Ada Lovelace")
-    client = TestClient(create_app())
+    client = browser()
     saved = client.post("/sign-in/canvas", data={"canvas_token": "1042~secret"}, follow_redirects=True)
     assert "Ada Lovelace" in saved.text
     assert load_settings().canvas_token == "1042~secret"
@@ -692,7 +829,7 @@ def test_rejected_canvas_token_is_not_saved(monkeypatch):
         raise CanvasError("bCourses rejected that token. Generate a new one and paste it again.")
 
     monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", reject)
-    client = TestClient(create_app())
+    client = browser()
     saved = client.post("/sign-in/canvas", data={"canvas_token": "not-a-token"}, follow_redirects=True)
     assert "rejected" in saved.text
     assert load_settings().canvas_token == ""
@@ -703,7 +840,7 @@ def test_canvas_token_with_spaces_is_refused(monkeypatch):
         raise AssertionError(token)
 
     monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", explode)
-    client = TestClient(create_app())
+    client = browser()
     saved = client.post("/sign-in/canvas", data={"canvas_token": "1042~two words"}, follow_redirects=True)
     assert "no spaces" in saved.text
     assert load_settings().canvas_token == ""
@@ -841,7 +978,7 @@ def test_connect_page_marks_a_failed_check(monkeypatch):
         "berkeleypulse.app.access_report",
         lambda: {"canvas": "connected", "calcentral": "failed", "mail": "off", "window_open": False},
     )
-    page = TestClient(create_app()).get("/sign-in")
+    page = browser().get("/sign-in")
     assert "pill ok" in page.text
     assert "Connected" in page.text
     assert "pill bad" in page.text
@@ -960,7 +1097,7 @@ def test_login_renders_when_the_project_data_dir_is_read_only(monkeypatch, tmp_p
     monkeypatch.setattr("berkeleypulse.config.project_root", lambda: root)
     root.chmod(0o555)
     try:
-        page = TestClient(create_app()).get("/login")
+        page = browser().get("/login")
         stored = data_dir()
     finally:
         root.chmod(0o755)
@@ -1023,7 +1160,7 @@ def test_edit_reorders_classes_and_removes_their_dates():
             (now.isoformat(), first, now.isoformat()),
         )
     reschedule(now=now)
-    client = TestClient(create_app())
+    client = browser()
     page = client.get("/", params={"view": "month"})
     courses_at = page.text.find('<ul class="courses">')
     assert page.text.find('href="/?editing=courses"') < courses_at
@@ -1128,7 +1265,7 @@ def test_data8_calendar_is_its_own_page_and_is_not_reread(monkeypatch):
         "Foundations of Data Science (Fall 2026)",
         "Homework is worth 20%. Projects are worth 30%. Quizzes are worth 10%. The midterm is worth 15%. The final is worth 25%.",
     )
-    client = TestClient(create_app())
+    client = browser()
     page = client.get("/courses/%s/site" % course_id)
     assert page.status_code == 200
     assert "Week 1" in page.text
@@ -1165,14 +1302,14 @@ def test_data8_calendar_is_its_own_page_and_is_not_reread(monkeypatch):
 
 
 def test_billing_stays_hidden_until_stripe_is_configured():
-    client = TestClient(create_app())
+    client = browser()
     assert "Subscribe" not in client.get("/").text
 
 
 def test_subscribe_stays_hidden_until_billing_is_turned_on(monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "rk_live_local")
     monkeypatch.setenv("STRIPE_PRICE_ID", "price_123")
-    client = TestClient(create_app())
+    client = browser()
     assert "Subscribe" not in client.get("/").text
 
 
@@ -1184,7 +1321,7 @@ def test_subscribe_opens_hosted_checkout(monkeypatch):
         "berkeleypulse.app.checkout_url",
         lambda origin: "https://checkout.stripe.com/c/pay/cs_test_abc",
     )
-    client = TestClient(create_app())
+    client = browser()
     assert 'action="/billing/checkout"' in client.get("/").text
     response = client.post("/billing/checkout", follow_redirects=False)
     assert response.status_code == 303
@@ -1296,7 +1433,7 @@ def test_product_push_updates_the_same_product_and_skips_prices(monkeypatch):
 def test_webhook_rejects_a_bad_signature(monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "rk_test_local")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
-    client = TestClient(create_app())
+    client = browser()
     response = client.post(
         "/billing/webhook",
         content=b"{}",

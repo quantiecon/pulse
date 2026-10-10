@@ -24,44 +24,58 @@
   </form>
   {% endif %}
   </div>
-  <ol class="key-steps">
-    <li>
-      <figure>
-        <img src="/static/guide/account.png" alt="Account in the bCourses sidebar">
-        <figcaption>Open Account in the left sidebar.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <figure>
-        <img src="/static/guide/settings.png" alt="Settings in the Account menu">
-        <figcaption>Open Settings.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <figure>
-        <img src="/static/guide/scroll.gif" alt="Scrolling down the settings page">
-        <figcaption>Scroll to Approved Integrations.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <figure>
-        <img src="/static/guide/integrations.png" alt="New Access Token button under Approved Integrations">
-        <figcaption>Press + New Access Token.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <figure>
-        <img src="/static/guide/generate.png" alt="New Access Token dialog with purpose, a date, and Generate Token">
-        <figcaption>Type a purpose, set the expiration up to 90 days out, then press Generate Token.</figcaption>
-      </figure>
-    </li>
-    <li>
-      <figure>
-        <img src="/static/guide/token.png" alt="The access token Canvas shows once">
-        <figcaption>Copy the token. Canvas shows it once. Paste it in the box on the left.</figcaption>
-      </figure>
-    </li>
-  </ol>
+  <div class="key-slider" data-key-slider>
+    <ol class="key-steps">
+      <li>
+        <figure>
+          <img src="/static/guide/account.png" alt="Account in the bCourses sidebar">
+          <figcaption><span>1.</span> Open Account in the left sidebar.</figcaption>
+        </figure>
+      </li>
+      <li hidden>
+        <figure>
+          <img src="/static/guide/settings.png" alt="Settings in the Account menu">
+          <figcaption><span>2.</span> Open Settings.</figcaption>
+        </figure>
+      </li>
+      <li hidden>
+        <figure>
+          <img src="/static/guide/scroll.gif" alt="Scrolling down the settings page">
+          <figcaption><span>3.</span> Scroll to Approved Integrations.</figcaption>
+        </figure>
+      </li>
+      <li hidden>
+        <figure>
+          <img src="/static/guide/integrations.png" alt="New Access Token button under Approved Integrations">
+          <figcaption><span>4.</span> Press + New Access Token.</figcaption>
+        </figure>
+      </li>
+      <li hidden>
+        <figure>
+          <img src="/static/guide/generate.png" alt="New Access Token dialog with purpose, a date, and Generate Token">
+          <figcaption><span>5.</span> Type a purpose, set the expiration up to 90 days out, then press Generate Token.</figcaption>
+        </figure>
+      </li>
+      <li hidden>
+        <figure>
+          <img src="/static/guide/token.png" alt="The access token Canvas shows once">
+          <figcaption><span>6.</span> Copy the token. Canvas shows it once. Paste it in the box on the left.</figcaption>
+        </figure>
+      </li>
+    </ol>
+    <div class="key-controls">
+      <button type="button" class="quiet key-arrow" data-dir="-1" aria-label="Back" disabled>Back</button>
+      <div class="key-dots" role="tablist" aria-label="bCourses steps">
+        <button type="button" role="tab" aria-label="Step 1" aria-selected="true"></button>
+        <button type="button" role="tab" aria-label="Step 2" aria-selected="false"></button>
+        <button type="button" role="tab" aria-label="Step 3" aria-selected="false"></button>
+        <button type="button" role="tab" aria-label="Step 4" aria-selected="false"></button>
+        <button type="button" role="tab" aria-label="Step 5" aria-selected="false"></button>
+        <button type="button" role="tab" aria-label="Step 6" aria-selected="false"></button>
+      </div>
+      <button type="button" class="quiet key-arrow" data-dir="1" aria-label="Next">Next</button>
+    </div>
+  </div>
 </section>
 
 <section class="card">
@@ -124,4 +138,49 @@
 </section>
 
 <form method="post" action="/scan"><button type="submit">Scan now</button></form>
+{% endblock %}
+{% block extra %}
+<script>
+  (function () {
+    var root = document.querySelector("[data-key-slider]");
+    if (!root) return;
+    var slides = Array.prototype.slice.call(root.querySelectorAll(".key-steps > li"));
+    var dots = Array.prototype.slice.call(root.querySelectorAll(".key-dots button"));
+    var prev = root.querySelector("[data-dir='-1']");
+    var next = root.querySelector("[data-dir='1']");
+    var index = 0;
+
+    function show(nextIndex) {
+      index = Math.max(0, Math.min(slides.length - 1, nextIndex));
+      slides.forEach(function (slide, n) {
+        var on = n === index;
+        slide.hidden = !on;
+      });
+      dots.forEach(function (dot, n) {
+        var on = n === index;
+        dot.classList.toggle("is-current", on);
+        dot.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      prev.disabled = index === 0;
+      next.disabled = index === slides.length - 1;
+    }
+
+    prev.addEventListener("click", function () { show(index - 1); });
+    next.addEventListener("click", function () { show(index + 1); });
+    dots.forEach(function (dot, n) {
+      dot.addEventListener("click", function () { show(n); });
+    });
+    root.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowLeft") {
+        show(index - 1);
+        event.preventDefault();
+      }
+      if (event.key === "ArrowRight") {
+        show(index + 1);
+        event.preventDefault();
+      }
+    });
+    show(0);
+  })();
+</script>
 {% endblock %}

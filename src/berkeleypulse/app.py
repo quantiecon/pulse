@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
+import secrets
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -50,12 +53,14 @@ def create_app() -> FastAPI:
     def health():
         return {"ok": True}
 
-    @app.get("/favicon.ico")
+    @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
-        return Response(status_code=204)
+        return FileResponse(BASE / "static" / "logos" / "galaxy.svg", media_type="image/svg+xml")
 
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, error: str = ""):
+        if _signed_in(request):
+            return RedirectResponse("/", status_code=303)
         return _render(request, "login.html", _login_context(error=error))
 
     @app.post("/login", response_class=HTMLResponse)
@@ -76,13 +81,15 @@ def create_app() -> FastAPI:
             if wants_json:
                 return JSONResponse({"ok": False, "error": message})
             return _render(request, "login.html", _login_context(email=email.strip(), email_error=message))
-        with db() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO interest(email, created_at) VALUES(?, ?)",
-                (address, datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")),
-            )
+        try:
+            _issue_login_code(address)
+        except LoginMailError as exc:
+            message = str(exc)
+            if wants_json:
+                return JSONResponse({"ok": False, "error": message})
+            return _render(request, "login.html", _login_context(email=address, email_error=message))
         if wants_json:
-            return JSONResponse({"ok": True, "email": address})
+            return JSONResponse({"ok": True, "email": address, "next": "code"})
         return _render(request, "login.html", _login_context(code_for=address))
 
     @app.post("/login/code")
@@ -98,10 +105,12 @@ def create_app() -> FastAPI:
         if digits != code.strip() or len(digits) != 6:
             message = "Enter the 6-digit code."
         else:
-            message = "A code has not been sent for that address."
-        if wants_json:
-            return JSONResponse({"ok": False, "error": message, "email": address})
-        return _render(request, "login.html", _login_context(code_for=address, code_error=message))
+            message = _consume_login_code(address, digits)
+        if message:
+            if wants_json:
+                return JSONResponse({"ok": False, "error": message, "email": address})
+            return _render(request, "login.html", _login_context(code_for=address, code_error=message))
+        return _start_session(request, address, wants_json)
 
     @app.post("/billing/checkout")
     def billing_checkout(request: Request):
@@ -473,22 +482,19 @@ def create_app() -> FastAPI:
     return app
 
 
-def _install_auth(app: FastAPI) -> None:
-    token = os.environ.get("PULSE_AUTH_TOKEN", "")
-    if not token:
-        return
+_PUBLIC_PATHS = {"/login", "/login/email", "/login/code", "/health", "/favicon.ico", "/billing/webhook"}
+_PUBLIC_STATIC = {"/static/gate.css", "/static/landscape.js", "/static/logos/galaxy.svg"}
 
+
+def _install_auth(app: FastAPI) -> None:
     @app.middleware("http")
     async def check_auth(request: Request, call_next):
         path = request.url.path
-        if path in {"/login", "/login/email", "/login/code", "/health", "/favicon.ico", "/billing/webhook"} or path.startswith("/static"):
+        if path in _PUBLIC_PATHS or path in _PUBLIC_STATIC:
             return await call_next(request)
-        cookie = request.cookies.get("pulse_auth", "")
-        if _same_secret(cookie, token):
+        if path == "/calendar.ics" and _calendar_token_ok(request.query_params.get("token", "")):
             return await call_next(request)
-        if path == "/calendar.ics" and _same_secret(request.query_params.get("token", ""), token):
-            return await call_next(request)
-        if path == "/login":
+        if _signed_in(request):
             return await call_next(request)
         return RedirectResponse("/login", status_code=303)
 
@@ -511,6 +517,152 @@ def _login_context(
         "code_for": code_for,
         "code_error": code_error,
     }
+
+
+class LoginMailError(Exception):
+    pass
+
+
+def send_login_code(address: str, code: str) -> None:
+    secret = os.environ.get("RESEND_SECRET", "").strip()
+    if not secret:
+        raise LoginMailError("Sign-in email is not configured.")
+    sender = os.environ.get("RESEND_FROM", "").strip() or "Galaxy <onboarding@resend.dev>"
+    try:
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": "Bearer %s" % secret,
+                "Content-Type": "application/json",
+                "User-Agent": "Galaxy/1.0",
+            },
+            json={
+                "from": sender,
+                "to": [address],
+                "subject": "Your Galaxy sign-in code",
+                "text": (
+                    "Your Galaxy sign-in code is %s.\n\n"
+                    "It expires in 10 minutes. If you did not ask for this, you can ignore it."
+                )
+                % code,
+            },
+            timeout=20.0,
+        )
+    except httpx.HTTPError as exc:
+        raise LoginMailError("The code could not be sent.") from exc
+    if response.status_code >= 400:
+        raise LoginMailError("The code could not be sent.")
+
+
+def _issue_login_code(address: str) -> None:
+    now = datetime.now(ZoneInfo("UTC"))
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    with db() as conn:
+        row = conn.execute("SELECT created_at FROM login_codes WHERE email = ?", (address,)).fetchone()
+        if row:
+            created = datetime.strptime(row["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=ZoneInfo("UTC"))
+            if now - created < timedelta(seconds=30):
+                return
+    code = "%06d" % secrets.randbelow(1000000)
+    send_login_code(address, code)
+    salt = secrets.token_hex(16)
+    digest = hashlib.sha256(("%s:%s" % (salt, code)).encode()).hexdigest()
+    expires = (now + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO login_codes(email, code_hash, salt, created_at, expires_at, attempts)
+            VALUES(?, ?, ?, ?, ?, 0)
+            ON CONFLICT(email) DO UPDATE SET
+              code_hash = excluded.code_hash,
+              salt = excluded.salt,
+              created_at = excluded.created_at,
+              expires_at = excluded.expires_at,
+              attempts = 0
+            """,
+            (address, digest, salt, stamp, expires),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO interest(email, created_at) VALUES(?, ?)",
+            (address, stamp),
+        )
+
+
+def _consume_login_code(address: str, code: str) -> str:
+    now = datetime.now(ZoneInfo("UTC"))
+    with db() as conn:
+        row = conn.execute("SELECT * FROM login_codes WHERE email = ?", (address,)).fetchone()
+        if row is None:
+            hmac.compare_digest(hashlib.sha256(b"missing").hexdigest(), hashlib.sha256(b"missing").hexdigest())
+            return "That code expired. Request a new one."
+        expires = datetime.strptime(row["expires_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=ZoneInfo("UTC"))
+        if now > expires or row["attempts"] >= 5:
+            conn.execute("DELETE FROM login_codes WHERE email = ?", (address,))
+            return "That code expired. Request a new one."
+        digest = hashlib.sha256(("%s:%s" % (row["salt"], code)).encode()).hexdigest()
+        if not hmac.compare_digest(digest, row["code_hash"]):
+            attempts = row["attempts"] + 1
+            if attempts >= 5:
+                conn.execute("DELETE FROM login_codes WHERE email = ?", (address,))
+                return "That code expired. Request a new one."
+            conn.execute("UPDATE login_codes SET attempts = ? WHERE email = ?", (attempts, address))
+            return "That code does not match."
+        conn.execute("DELETE FROM login_codes WHERE email = ?", (address,))
+    return ""
+
+
+def _start_session(request: Request, address: str, wants_json: bool):
+    token = secrets.token_urlsafe(32)
+    created = datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO sessions(token, email, created_at) VALUES(?, ?, ?)",
+            (token, address, created),
+        )
+    nxt = "/" if _auth_token_ok(request.cookies.get("pulse_auth", "")) else "/login"
+    if wants_json:
+        response = JSONResponse({"ok": True, "email": address, "next": nxt})
+    else:
+        response = RedirectResponse(nxt, status_code=303)
+    response.set_cookie(
+        "pulse_session",
+        token,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        max_age=60 * 60 * 24 * 400,
+        secure=request.url.scheme == "https",
+    )
+    return response
+
+
+def _session_email(request: Request) -> str:
+    token = request.cookies.get("pulse_session", "")
+    if not token or len(token) > 200:
+        return ""
+    with db() as conn:
+        row = conn.execute("SELECT email FROM sessions WHERE token = ?", (token,)).fetchone()
+    if not row:
+        return ""
+    return _berkeley_email(row["email"])
+
+
+def _auth_token_ok(given: str) -> bool:
+    expected = os.environ.get("PULSE_AUTH_TOKEN", "")
+    if not expected:
+        return True
+    return _same_secret(given, expected)
+
+
+def _calendar_token_ok(given: str) -> bool:
+    expected = os.environ.get("PULSE_AUTH_TOKEN", "")
+    return bool(expected) and _same_secret(given, expected)
+
+
+def _signed_in(request: Request) -> bool:
+    if not _session_email(request):
+        return False
+    return _auth_token_ok(request.cookies.get("pulse_auth", ""))
 
 
 def _berkeley_email(value: str) -> str:
