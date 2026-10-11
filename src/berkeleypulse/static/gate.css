@@ -93,10 +93,12 @@ button, input { font: inherit; }
   text-transform: uppercase;
 }
 
-.gate-bar a.quiet {
+.gate-bar a.quiet,
+.gate-version {
   color: var(--muted);
   font-size: 0.84rem;
   text-decoration: none;
+  letter-spacing: 0.04em;
 }
 
 .gate-hero {
@@ -295,7 +297,8 @@ button, input { font: inherit; }
 }
 
 .gate-logos b,
-.gate-sources b {
+.gate-sources b,
+.gate-logos img {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -307,6 +310,13 @@ button, input { font: inherit; }
   font-size: 0.78rem;
   letter-spacing: -0.03em;
 }
+
+.gate-logos img {
+  display: block;
+  object-fit: contain;
+}
+
+.pixel { image-rendering: pixelated; }
 
 .gate-logos li.next { opacity: 0.72; }
 
@@ -414,6 +424,8 @@ button, input { font: inherit; }
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+.gate-foot a { text-decoration: underline; text-underline-offset: 0.15em; }
 
 @media (max-width: 800px) {
   .gate-points,

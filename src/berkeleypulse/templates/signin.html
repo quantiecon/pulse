@@ -6,7 +6,7 @@
 
 <section class="card key-card">
   <div class="key-copy">
-  <h2>bCourses</h2>
+  <h2 class="service"><img src="/static/logos/bcourses.png" alt="" width="22" height="22">bCourses</h2>
   <p>{% if desk.canvas == "connected" %}<span class="pill ok">Connected</span>{% elif desk.canvas == "failed" %}<span class="pill bad">Failed</span>{% else %}<span class="pill quiet">Not connected</span>{% endif %}</p>
   {% if desk.canvas == "failed" %}<p class="muted">Pulse tried bCourses with the saved key and it was rejected. Paste a new token.</p>{% endif %}
   <p class="muted">Assignments, due dates, and the syllabus. Paste a token from Account → Settings. It stays on this Mac and is sent to bCourses only to confirm the account, then again when you scan.</p>
@@ -79,7 +79,7 @@
 </section>
 
 <section class="card">
-  <h2>CalCentral</h2>
+  <h2 class="service"><img class="pixel" src="/static/logos/calcentral.png?v=pixel" alt="" width="22" height="22">CalCentral</h2>
   <p>{% if desk.calcentral == "connected" %}<span class="pill ok">Connected</span>{% elif desk.calcentral == "failed" %}<span class="pill bad">Failed</span>{% else %}<span class="pill quiet">Not connected</span>{% endif %}</p>
   {% if desk.calcentral == "failed" %}<p class="muted">Pulse tried CalCentral with the saved key and it was rejected. Allow it again.</p>{% endif %}
   <p class="muted">Open the syllabus page, allow it, then save that page. The policy is parsed once.</p>
@@ -90,7 +90,7 @@
 </section>
 
 <section class="card">
-  <h2>Mail</h2>
+  <h2 class="service"><img src="/static/logos/gmail.webp" alt="" width="22" height="22">Mail</h2>
   <p>{% if desk.mail == "connected" %}<span class="pill ok">Connected</span>{% elif desk.mail == "failed" %}<span class="pill bad">Failed</span>{% else %}<span class="pill quiet">Not connected</span>{% endif %}</p>
   {% if desk.mail == "failed" %}<p class="muted">Pulse tried mail with the saved key and it was rejected. Allow it again, or replace the app password.</p>{% endif %}
   <p class="muted">The same window. Finish any phone prompt, then save. Pulse reads the inbox from that sign-in. An app password in Settings is optional.</p>

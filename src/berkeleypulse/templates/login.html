@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Pulse · Berkeley</title>
+  <title>Galaxy · Berkeley</title>
   <link rel="icon" href="/static/logos/galaxy.svg?v=favicon" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/gate.css?v=mark">
+  <link rel="stylesheet" href="/static/gate.css?v=support">
 </head>
 <body class="gate">
   <div class="gate-field" id="field" aria-hidden="true">
@@ -22,7 +22,7 @@
           <small>Berkeley</small>
         </span>
       </a>
-      <a class="quiet" href="#unlock">Unlock this computer</a>
+      <span class="gate-version">v1.0.0-beta</span>
     </header>
 
     <section class="gate-hero">
@@ -38,7 +38,7 @@
             {% else %}
             <input id="signup-field" name="email" type="email" inputmode="email" autocomplete="email" spellcheck="false" placeholder="you@berkeley.edu" value="{{ email }}" required>
             {% endif %}
-            <button type="submit" id="signup-button">{% if code_for %}Verify{% else %}Sign up now{% endif %}</button>
+            <button type="submit" id="signup-button">{% if code_for %}Verify{% else %}Sign up or sign in{% endif %}</button>
           </div>
           {% if code_for %}
           <input type="hidden" name="email" id="held-email" value="{{ code_for }}">
@@ -84,23 +84,23 @@
         <p>These are the connections Pulse uses today, plus the two Berkeley tools that still sit outside it.</p>
         <ul class="gate-logos">
           <li>
-            <b aria-hidden="true">bC</b>
+            <img src="/static/logos/bcourses.png" alt="" width="42" height="42">
             <div><strong>bCourses</strong><small>Assignments, files, and due dates</small></div>
           </li>
           <li>
-            <b aria-hidden="true">CC</b>
+            <img class="pixel" src="/static/logos/calcentral.png?v=pixel" alt="" width="42" height="42">
             <div><strong>CalCentral</strong><small>The syllabus page you leave open</small></div>
           </li>
           <li>
-            <b aria-hidden="true">@</b>
+            <img src="/static/logos/gmail.webp" alt="" width="42" height="42">
             <div><strong>Gmail</strong><small>bMail, kept or dropped with a reason</small></div>
           </li>
           <li>
-            <b aria-hidden="true">Cal</b>
+            <img src="/static/logos/calendar.webp" alt="" width="42" height="42">
             <div><strong>Calendar</strong><small>One .ics file for the week you built</small></div>
           </li>
           <li class="next">
-            <b aria-hidden="true">Gs</b>
+            <img src="/static/logos/gradescope.png?v=bars" alt="" width="42" height="42">
             <div><strong>Gradescope <em>coming soon</em></strong><small>Where a lot of the real due dates are</small></div>
           </li>
           <li class="next">
@@ -139,7 +139,7 @@
           <button type="submit">Unlock</button>
         </form>
       </details>
-      <p class="gate-foot">Keys for bCourses, CalCentral, and mail stay in this computer’s Pulse folder. Pulse does not store your password.</p>
+      <p class="gate-foot">Keys for bCourses, CalCentral, and mail stay in this computer’s Pulse folder. Pulse does not store your password.<br>Support <a href="mailto:help@galaxycal.com">help@galaxycal.com</a></p>
     </div>
   </div>
   <script src="/static/landscape.js?v=hole3"></script>

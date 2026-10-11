@@ -483,7 +483,16 @@ def create_app() -> FastAPI:
 
 
 _PUBLIC_PATHS = {"/login", "/login/email", "/login/code", "/health", "/favicon.ico", "/billing/webhook"}
-_PUBLIC_STATIC = {"/static/gate.css", "/static/landscape.js", "/static/logos/galaxy.svg"}
+_PUBLIC_STATIC = {
+    "/static/gate.css",
+    "/static/landscape.js",
+    "/static/logos/galaxy.svg",
+    "/static/logos/bcourses.png",
+    "/static/logos/gmail.webp",
+    "/static/logos/calendar.webp",
+    "/static/logos/gradescope.png",
+    "/static/logos/calcentral.png",
+}
 
 
 def _install_auth(app: FastAPI) -> None:
@@ -527,7 +536,7 @@ def send_login_code(address: str, code: str) -> None:
     secret = os.environ.get("RESEND_SECRET", "").strip()
     if not secret:
         raise LoginMailError("Sign-in email is not configured.")
-    sender = os.environ.get("RESEND_FROM", "").strip() or "Galaxy <onboarding@resend.dev>"
+    sender = os.environ.get("RESEND_FROM", "").strip() or "Galaxy <noreply@login.galaxycal.com>"
     try:
         response = httpx.post(
             "https://api.resend.com/emails",

@@ -60,6 +60,19 @@ h1 { font-size: 1.7rem; margin: 0 0 0.35rem; }
 
 h2 { font-size: 1.15rem; margin: 0 0 0.55rem; }
 
+h2.service {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+h2.service img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  border-radius: 5px;
+}
+
 p { margin: 0.3rem 0; }
 
 code {
@@ -248,6 +261,15 @@ fieldset {
 }
 
 .status p { display: flex; gap: 6px; align-items: center; margin: 0; }
+
+.status-logo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 3px;
+}
+
+.pixel { image-rendering: pixelated; }
 
 .dot {
   width: 7px;
@@ -1033,6 +1055,8 @@ blockquote {
 }
 
 .footer p { margin: 0.15rem 0; }
+
+.footer a { text-decoration: underline; text-underline-offset: 0.15em; }
 
 .empty-mail { padding: 8px 0; }
 

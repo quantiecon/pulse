@@ -4,14 +4,17 @@
 <div class="home">
 <section class="status" aria-label="Connections">
   <p>
+    <img class="status-logo" src="/static/logos/bcourses.png" alt="" width="16" height="16">
     <span class="dot {{ 'on' if desk.canvas == 'connected' else ('bad' if desk.canvas == 'failed' else '') }}"></span>
     Canvas {{ "connected" if desk.canvas == "connected" else ("failed" if desk.canvas == "failed" else "not connected") }}
   </p>
   <p>
+    <img class="status-logo pixel" src="/static/logos/calcentral.png?v=pixel" alt="" width="16" height="16">
     <span class="dot {{ 'on' if desk.calcentral == 'connected' else ('bad' if desk.calcentral == 'failed' else '') }}"></span>
     CalCentral {{ "connected" if desk.calcentral == "connected" else ("failed" if desk.calcentral == "failed" else "not connected") }}
   </p>
   <p>
+    <img class="status-logo" src="/static/logos/gmail.webp" alt="" width="16" height="16">
     <span class="dot {{ 'on' if desk.mail == 'connected' else ('bad' if desk.mail == 'failed' else '') }}"></span>
     Mail {{ "connected" if desk.mail == "connected" else ("failed" if desk.mail == "failed" else "not connected") }}
   </p>

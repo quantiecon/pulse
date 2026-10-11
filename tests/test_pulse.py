@@ -577,8 +577,15 @@ def test_login_page_takes_a_berkeley_email_only():
     assert "All in one place." in page.text
     assert "Enough browser hopping: school's hard enough." in page.text
     assert "By Berkeley. For Berkeley." in page.text
+    assert 'href="mailto:help@galaxycal.com"' in page.text
     assert "@berkeley.edu only" in page.text
+    assert "Sign up or sign in" in page.text
     assert "Gradescope" in page.text
+    assert "/static/logos/bcourses.png" in page.text
+    assert "/static/logos/calcentral.png" in page.text
+    assert "/static/logos/gmail.webp" in page.text
+    assert "/static/logos/calendar.webp" in page.text
+    assert "/static/logos/gradescope.png" in page.text
     assert "Data 8" in page.text
     refused = client.post("/login/email", data={"email": "oski@gmail.com"})
     assert refused.status_code == 200
@@ -687,6 +694,10 @@ def test_unsigned_visitor_stops_at_the_login_page():
     assert "text/css" in client.get("/static/gate.css").headers["content-type"]
     assert client.get("/static/landscape.js").status_code == 200
     assert "svg" in client.get("/static/logos/galaxy.svg").headers["content-type"]
+    for logo in ("bcourses.png", "gmail.webp", "calendar.webp", "gradescope.png", "calcentral.png"):
+        logo_response = client.get("/static/logos/%s" % logo)
+        assert logo_response.status_code == 200, logo
+        assert logo_response.headers["content-type"].startswith("image/"), logo
     assert client.get("/favicon.ico").status_code == 200
     assert client.get("/health").json() == {"ok": True}
 
