@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex">
   <title>Galaxy · Berkeley</title>
   <link rel="icon" href="/static/logos/galaxy.svg?v=favicon" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/gate.css?v=support">
+  <link rel="stylesheet" href="/static/gate.css?v=resend">
 </head>
 <body class="gate">
   <div class="gate-field" id="field" aria-hidden="true">
@@ -43,15 +43,18 @@
           {% if code_for %}
           <input type="hidden" name="email" id="held-email" value="{{ code_for }}">
           {% endif %}
-          {% if email_error %}
-          <p id="signup-note" class="error" role="alert">{{ email_error }}</p>
-          {% elif code_error %}
-          <p id="signup-note" class="error" role="alert">{{ code_error }}</p>
-          {% elif code_for %}
-          <p id="signup-note" role="status">Enter the code for {{ code_for }}.</p>
-          {% else %}
-          <p id="signup-note">@berkeley.edu only</p>
-          {% endif %}
+          <div class="signup-status">
+            {% if email_error %}
+            <p id="signup-note" class="error" role="alert">{{ email_error }}</p>
+            {% elif code_error %}
+            <p id="signup-note" class="error" role="alert">{{ code_error }}</p>
+            {% elif code_for %}
+            <p id="signup-note" role="status">Enter the code for {{ code_for }}.</p>
+            {% else %}
+            <p id="signup-note">@berkeley.edu only</p>
+            {% endif %}
+            <button type="button" class="resend-code" id="resend-code" data-wait="{{ resend_after }}" {% if not code_for %}hidden{% endif %} {% if resend_after %}disabled{% endif %}>{% if resend_after %}Resend {{ resend_after }}{% else %}Resend{% endif %}</button>
+          </div>
       </form>
       <button class="gate-motion" id="field-motion" type="button" aria-pressed="false" aria-label="Pause motion" data-landscape-control>
         <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.5h3.6v15H6.5zm7.4 0h3.6v15h-3.6z"/></svg>
@@ -88,7 +91,7 @@
             <div><strong>bCourses</strong><small>Assignments, files, and due dates</small></div>
           </li>
           <li>
-            <img class="pixel" src="/static/logos/calcentral.png?v=pixel" alt="" width="42" height="42">
+            <img src="/static/logos/calcentral.png?v=mark" alt="" width="42" height="42">
             <div><strong>CalCentral</strong><small>The syllabus page you leave open</small></div>
           </li>
           <li>
@@ -142,7 +145,7 @@
       <p class="gate-foot">Keys for bCourses, CalCentral, and mail stay in this computer’s Pulse folder. Pulse does not store your password.<br>Support <a href="mailto:help@galaxycal.com">help@galaxycal.com</a></p>
     </div>
   </div>
-  <script src="/static/landscape.js?v=hole3"></script>
+  <script src="/static/landscape.js?v=sky"></script>
   <script>
     var form = document.getElementById("signup");
     var berkeley = /^[a-z0-9][a-z0-9._%+-]*@berkeley\.edu$/;
@@ -155,6 +158,13 @@
       return document.getElementById("signup-note");
     }
 
+    var RESEND_WAIT = 59;
+    var resendTimer = 0;
+
+    function resendButton() {
+      return document.getElementById("resend-code");
+    }
+
     function showNote(message, isError) {
       var note = signupNote();
       if (!note) return;
@@ -164,7 +174,40 @@
       note.textContent = message;
     }
 
-    function showCode(email) {
+    function setResendWait(seconds) {
+      var button = resendButton();
+      if (!button) return;
+      window.clearInterval(resendTimer);
+      var left = Math.max(0, seconds || 0);
+      function paint() {
+        if (left > 0) {
+          button.disabled = true;
+          button.textContent = "Resend " + left;
+          button.setAttribute("aria-label", "Resend code in " + left + " seconds");
+        } else {
+          button.disabled = false;
+          button.textContent = "Resend";
+          button.setAttribute("aria-label", "Resend code");
+          window.clearInterval(resendTimer);
+        }
+      }
+      paint();
+      if (left > 0) {
+        resendTimer = window.setInterval(function () {
+          left -= 1;
+          paint();
+        }, 1000);
+      }
+    }
+
+    function showResend(show, seconds) {
+      var button = resendButton();
+      if (!button) return;
+      button.hidden = !show;
+      if (show) setResendWait(seconds);
+    }
+
+    function showCode(email, retryAfter) {
       var field = signupField();
       var label = document.getElementById("signup-label");
       var button = document.getElementById("signup-button");
@@ -195,6 +238,7 @@
       }
       held.value = email;
       showNote("Enter the code for " + email + ".", false);
+      showResend(true, retryAfter > 0 ? retryAfter : RESEND_WAIT);
       field.focus();
     }
 
@@ -207,6 +251,35 @@
       }).then(function (response) {
         return response.json();
       });
+    }
+
+    var resend = resendButton();
+    if (resend) {
+      resend.addEventListener("click", function () {
+        var held = document.getElementById("held-email");
+        var email = held ? held.value : "";
+        if (!email || resend.disabled) return;
+        resend.disabled = true;
+        var body = new FormData();
+        body.set("email", email);
+        postForm("/login/email", body).then(function (data) {
+          if (!data.ok) {
+            showNote(data.error || "Could not send a code.", true);
+            setResendWait(0);
+            return;
+          }
+          showNote("Enter the code for " + (data.email || email) + ".", false);
+          setResendWait(data.retry_after > 0 ? data.retry_after : RESEND_WAIT);
+        }).catch(function () {
+          showNote("Could not send a code.", true);
+          setResendWait(0);
+        });
+      });
+    }
+    if (form && form.dataset.step === "code" && resend) {
+      var rawWait = resend.getAttribute("data-wait");
+      var parsedWait = rawWait === null || rawWait === "" ? RESEND_WAIT : parseInt(rawWait, 10);
+      setResendWait(isNaN(parsedWait) ? RESEND_WAIT : parsedWait);
     }
 
     if (form) {
@@ -231,7 +304,7 @@
               return;
             }
             if (data.next === "/") {
-              window.location.assign("/");
+              window.location.replace("/");
               return;
             }
             showNote("That address is saved. Unlock this computer to open the calendar.", false);
@@ -258,7 +331,7 @@
             return;
           }
           if (data.next === "code") {
-            showCode(data.email || value);
+            showCode(data.email || value, data.retry_after);
             return;
           }
           showNote("Could not send a code.", true);

@@ -215,6 +215,40 @@ button, input { font: inherit; }
   font-size: 0.95rem;
 }
 
+.signup-status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 2px 0;
+}
+
+.gate-signup .signup-status p { margin: 0; flex: 1; min-width: 0; }
+
+.gate-signup button.resend-code {
+  flex: none;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.gate-signup button.resend-code:disabled {
+  color: #b7b7b7;
+  text-decoration: none;
+  cursor: default;
+}
+
+.gate-signup button.resend-code[hidden] { display: none; }
+
 .gate-signup p.error { color: #f0b4b4; }
 
 .gate-sheet {

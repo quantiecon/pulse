@@ -1,7 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Settings · Pulse{% endblock %}
+{% block title %}Account · Pulse{% endblock %}
 {% block body %}
-<h1>Settings</h1>
+<section class="account">
+  <div class="account-pfp" aria-hidden="true">
+    {% if account.avatar %}
+    <img src="/account/avatar?v={{ account.avatar_v }}" alt="">
+    {% else %}
+    <span>{{ account.initials }}</span>
+    {% endif %}
+  </div>
+  <div>
+    <p class="eyebrow">Account</p>
+    <h1>{{ account.name }}</h1>
+    {% if account.email %}<p>{{ account.email }}</p>{% endif %}
+    <p class="muted">Study plan: {{ settings.work_style }}</p>
+    <form method="post" action="/settings/avatar" enctype="multipart/form-data" class="account-photo">
+      <label class="button quiet" for="photo">{% if account.avatar %}Change photo{% else %}Add photo{% endif %}</label>
+      <input id="photo" name="photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+    </form>
+  </div>
+</section>
+
+<h2>Settings</h2>
 <p class="lede">Secrets stay in <code>config.json</code> on this machine. Leave a secret blank to keep the one already saved. A scan runs only when you press Scan.</p>
 
 <form method="post" action="/settings" class="stack settings">
@@ -68,4 +88,14 @@
   </ul>
 </section>
 {% endif %}
+{% endblock %}
+{% block extra %}
+<script>
+  var photo = document.getElementById("photo");
+  if (photo) {
+    photo.addEventListener("change", function () {
+      if (photo.files && photo.files.length) photo.form.submit();
+    });
+  }
+</script>
 {% endblock %}

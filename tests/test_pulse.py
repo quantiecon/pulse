@@ -19,6 +19,7 @@ from berkeleypulse.schedule import estimate_effort_minutes, plan_blocks
 from berkeleypulse.syllabus import heuristic_parse
 from berkeleypulse.sync import add_manual_course, reindex_course, reschedule
 from berkeleypulse.textutil import html_to_text
+from berkeleypulse.universe import interpret, propose
 
 SYLLABUS = """
 Homework is worth 20%.
@@ -503,9 +504,24 @@ def test_demo_digest_hides_newsletters_and_serves_calendar():
     week = client.get("/", params={"view": "week", "week": "2026-10-09"})
     assert "October 2026" in week.text
     assert "W41" in week.text
-    assert "Someday" in week.text
-    assert 'data-day="2026-10-05"' in week.text
-    assert week.text.count('class="week-line"') == 60
+    assert week.text.count('class="week-dayhead') == 7
+    for iso in (
+        "2026-10-05",
+        "2026-10-06",
+        "2026-10-07",
+        "2026-10-08",
+        "2026-10-09",
+        "2026-10-10",
+        "2026-10-11",
+    ):
+        assert 'data-day="%s"' % iso in week.text
+    assert 'data-day="2026-10-04"' not in week.text
+    assert 'data-day="2026-10-12"' not in week.text
+    assert 'class="slot-box deadline"' in week.text
+    assert "MATH 54 · Problem Set 4" in week.text
+    assert "CS 61A · Quiz 3" in week.text
+    assert "CS 61A · Project 2" not in week.text
+    assert "11:59 PM" in week.text
     saved = client.post(
         "/notes",
         data={"day": "2026-10-09", "slot": "0", "body": "Remember to save"},
@@ -521,7 +537,8 @@ def test_demo_digest_hides_newsletters_and_serves_calendar():
     with db() as conn:
         assert conn.execute("SELECT COUNT(*) AS n FROM day_notes").fetchone()["n"] == 1
     shown = client.get("/", params={"view": "week", "week": "2026-10-05"})
-    assert "Remember to save" in shown.text
+    assert shown.text.count('class="week-dayhead') == 7
+    assert 'data-day="2026-10-05"' in shown.text
 
 
 def test_crammer_setting_rebuilds_study_blocks():
@@ -547,6 +564,133 @@ def test_crammer_setting_rebuilds_study_blocks():
     page = client.get("/", params={"view": "month"})
     assert "One study block the day before" in page.text
     assert load_settings().work_style == "crammer"
+
+
+def test_universe_offers_plan_and_study_and_stops_at_ten_images():
+    client = browser()
+    page = client.get("/")
+    assert 'class="universe"' in page.text
+    assert 'value="plan"' in page.text
+    assert 'value="study"' in page.text
+    assert "Scribble a class, deadline, or block" in page.text
+    png = b"\x89PNG\r\n\x1a\n" + b"pulse"
+    plan = client.post(
+        "/universe",
+        data={"mode": "plan", "prompt": "lunch with Ada on Friday"},
+        follow_redirects=False,
+    )
+    assert plan.status_code == 303
+    assert "calendar+proposal" in plan.headers["location"]
+    study = client.post(
+        "/universe",
+        data={"mode": "study", "prompt": "midterm review"},
+        files=[("images", ("board.png", png, "image/png"))],
+        follow_redirects=False,
+    )
+    assert study.status_code == 303
+    assert "study+plan" in study.headers["location"]
+    empty = client.post("/universe", data={"mode": "plan", "prompt": "   "}, follow_redirects=False)
+    assert "level=error" in empty.headers["location"]
+    wrong = client.post("/universe", data={"mode": "later", "prompt": "notes"}, follow_redirects=False)
+    assert "Choose+Plan" in wrong.headers["location"]
+    text = client.post(
+        "/universe",
+        data={"mode": "plan", "prompt": "from a photo"},
+        files=[("images", ("notes.txt", b"hello", "text/plain"))],
+        follow_redirects=False,
+    )
+    assert "PNG" in text.headers["location"]
+    full = client.post(
+        "/universe",
+        data={"mode": "study", "prompt": "chapter 3"},
+        files=[("images", ("a.png", png, "image/png")) for _ in range(11)],
+        follow_redirects=False,
+    )
+    assert "10+images" in full.headers["location"]
+    held = client.post(
+        "/universe",
+        data={"mode": "study", "prompt": "chapter 3"},
+        files=[("images", ("a.png", png, "image/png")) for _ in range(10)],
+        follow_redirects=False,
+    )
+    assert held.status_code == 303
+    assert "study+plan" in held.headers["location"]
+    page = client.get("/")
+    assert "Old schedule" in page.text
+    assert "New schedule" in page.text
+    assert "Thinking" in page.text
+    assert 'data-lockin' in page.text
+    assert "Lock in" in page.text
+    assert 'data-minutes="50"' in page.text
+
+
+def test_universe_proposal_puts_the_added_event_beside_the_conflict():
+    client = browser()
+    course_id = add_manual_course("CS 61A", "SICP", "Homework is worth 100%.")
+    now = datetime.now(TZ)
+    incoming, reason = interpret("lunch with Ada on Friday", now)
+    assert reason == ""
+    event = incoming[0]
+    assert event["title"] == "Lunch with Ada"
+    assert event["start"].weekday() == 4
+    assert (event["start"].hour, event["start"].minute) == (12, 0)
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO events(course_id, kind, title, starts_at, ends_at, details) VALUES(?, ?, ?, ?, ?, ?)",
+            (
+                course_id,
+                "meeting",
+                "CS 61A · Section",
+                event["start"].isoformat(),
+                event["end"].isoformat(),
+                "",
+            ),
+        )
+    plan = client.post(
+        "/universe",
+        data={"mode": "plan", "prompt": "lunch with Ada on Friday"},
+        headers={"accept": "application/json"},
+        follow_redirects=False,
+    )
+    assert plan.status_code == 200
+    body = plan.json()
+    assert body["added"] == 1
+    assert body["changed"] == 0
+    assert body["conflicts"] == 1
+    assert body["summary"] == "1 added · 0 changed · 1 conflict"
+    row = body["days"][0]["rows"][0]
+    assert row["old"][0]["title"] == "CS 61A · Section"
+    assert row["old"][0]["tone"] == "conflict"
+    assert [item["tone"] for item in row["new"]] == ["conflict", "added"]
+    assert row["new"][1]["title"] == "Lunch with Ada"
+    moved = interpret("Lab review Friday 3-4pm", now)[0][0]
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO events(course_id, kind, title, starts_at, ends_at, details) VALUES(?, ?, ?, ?, ?, ?)",
+            (
+                course_id,
+                "meeting",
+                "Lab review",
+                event["start"].isoformat(),
+                event["end"].isoformat(),
+                "",
+            ),
+        )
+    existing = [
+        {"title": "Lab review", "start": event["start"], "end": event["end"]},
+    ]
+    change = propose([moved], existing)
+    assert change["added"] == 0
+    assert change["changed"] == 1
+    unread = client.post(
+        "/universe",
+        data={"mode": "plan"},
+        files=[("images", ("board.png", b"\x89PNG\r\n\x1a\n" + b"pulse", "image/png"))],
+        headers={"accept": "application/json"},
+        follow_redirects=False,
+    )
+    assert unread.status_code == 400
+    assert unread.json()["error"] == "Could not read a schedule from that image."
 
 
 def test_manual_course_from_the_form():
@@ -599,6 +743,8 @@ def test_login_page_takes_a_berkeley_email_only():
     )
     assert asked.status_code == 200
     assert "Enter the code for ada.lovelace@berkeley.edu." in asked.text
+    assert 'id="resend-code"' in asked.text
+    assert "Resend 59" in asked.text
     assert "pulse_session" not in asked.cookies
     still = client.get("/", follow_redirects=False)
     assert still.status_code == 303
@@ -632,10 +778,80 @@ def test_login_page_takes_a_berkeley_email_only():
         data={"email": "ada.lovelace@berkeley.edu"},
         headers={"Accept": "application/json"},
     )
-    assert again.json() == {"ok": True, "email": "ada.lovelace@berkeley.edu", "next": "code"}
+    payload = again.json()
+    assert payload["ok"] is True
+    assert payload["email"] == "ada.lovelace@berkeley.edu"
+    assert payload["next"] == "code"
+    assert payload["retry_after"] == 0
     with db() as conn:
         assert conn.execute("SELECT COUNT(*) AS n FROM interest").fetchone()["n"] == 1
         assert conn.execute("SELECT created_at FROM interest").fetchone()["created_at"] == row["created_at"]
+
+
+def test_resend_waits_59_seconds_then_sends_a_new_code():
+    client = TestClient(create_app())
+    first = client.post(
+        "/login/email",
+        data={"email": "oski@berkeley.edu"},
+        headers={"Accept": "application/json"},
+    )
+    assert first.json()["retry_after"] == 0
+    from berkeleypulse.app import send_login_code
+
+    original = send_login_code.last
+    early = client.post(
+        "/login/email",
+        data={"email": "oski@berkeley.edu"},
+        headers={"Accept": "application/json"},
+    )
+    assert early.json()["ok"] is True
+    assert early.json()["retry_after"] == 59
+    assert send_login_code.last == original
+    with db() as conn:
+        stale = (datetime.now(ZoneInfo("UTC")) - timedelta(seconds=59)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn.execute("UPDATE login_codes SET created_at = ? WHERE email = ?", (stale, "oski@berkeley.edu"))
+    later = client.post(
+        "/login/email",
+        data={"email": "oski@berkeley.edu"},
+        headers={"Accept": "application/json"},
+    )
+    assert later.json()["retry_after"] == 0
+    assert send_login_code.last != original
+    assert len(send_login_code.last) == 6
+
+
+def test_signed_session_opens_the_calendar_on_a_fresh_instance(monkeypatch):
+    monkeypatch.setenv("PULSE_SESSION_SECRET", "cross-instance-secret")
+    client = TestClient(create_app())
+    asked = client.post(
+        "/login/email",
+        data={"email": "oski@berkeley.edu"},
+        headers={"Accept": "application/json"},
+    )
+    assert asked.json()["ok"] is True
+    from berkeleypulse.app import send_login_code
+
+    verified = client.post(
+        "/login/code",
+        data={"email": "oski@berkeley.edu", "code": send_login_code.last},
+        headers={"Accept": "application/json"},
+        follow_redirects=False,
+    )
+    assert verified.status_code == 200
+    assert verified.json()["next"] == "/"
+    assert "no-store" in verified.headers["cache-control"]
+    assert verified.cookies.get("pulse_session", "").startswith("v1.")
+    with db() as conn:
+        conn.execute("DELETE FROM sessions")
+    home = client.get("/", follow_redirects=False)
+    assert home.status_code == 200
+    assert "Open sign-in" in home.text
+    other = TestClient(create_app())
+    denied = other.get("/", follow_redirects=False)
+    assert denied.status_code == 303
+    assert denied.headers["location"] == "/login"
+    assert "Continue" in denied.text
+    assert "no-store" in denied.headers["cache-control"]
 
 
 def test_login_wall(monkeypatch):
@@ -826,7 +1042,10 @@ def test_sign_in_page_is_the_click_through(monkeypatch):
 
 
 def test_canvas_token_is_checked_before_it_is_saved(monkeypatch):
-    monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", lambda base, token: "Ada Lovelace")
+    monkeypatch.setattr(
+        "berkeleypulse.app.canvas_account",
+        lambda base, token: {"name": "Ada Lovelace", "avatar_url": ""},
+    )
     client = browser()
     saved = client.post("/sign-in/canvas", data={"canvas_token": "1042~secret"}, follow_redirects=True)
     assert "Ada Lovelace" in saved.text
@@ -839,7 +1058,7 @@ def test_rejected_canvas_token_is_not_saved(monkeypatch):
     def reject(base, token):
         raise CanvasError("bCourses rejected that token. Generate a new one and paste it again.")
 
-    monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", reject)
+    monkeypatch.setattr("berkeleypulse.app.canvas_account", reject)
     client = browser()
     saved = client.post("/sign-in/canvas", data={"canvas_token": "not-a-token"}, follow_redirects=True)
     assert "rejected" in saved.text
@@ -850,7 +1069,7 @@ def test_canvas_token_with_spaces_is_refused(monkeypatch):
     def explode(base, token):
         raise AssertionError(token)
 
-    monkeypatch.setattr("berkeleypulse.app.verify_canvas_token", explode)
+    monkeypatch.setattr("berkeleypulse.app.canvas_account", explode)
     client = browser()
     saved = client.post("/sign-in/canvas", data={"canvas_token": "1042~two words"}, follow_redirects=True)
     assert "no spaces" in saved.text
@@ -876,6 +1095,69 @@ def test_canvas_token_verification_reads_the_account_name(monkeypatch):
 
     monkeypatch.setattr("berkeleypulse.canvas.httpx.get", fake_get)
     assert verify_canvas_token("https://bcourses.berkeley.edu", "1042~abc") == "Ada Lovelace"
+
+
+def test_account_page_and_header_menu():
+    client = browser()
+    page = client.get("/")
+    assert "Load demo" not in page.text
+    assert 'class="avatar-button"' in page.text
+    assert "Account menu for Oski" in page.text
+    assert 'href="mailto:help@galaxycal.com">Support' in page.text
+    assert 'href="/settings">Settings' in page.text
+    account = client.get("/settings")
+    assert "<h1>Oski</h1>" in account.text
+    assert "oski@berkeley.edu" in account.text
+    assert "Add photo" in account.text
+    assert "Study plan: spacer" in account.text
+    saved = client.post(
+        "/settings/avatar",
+        files={"photo": ("me.png", b"\x89PNG\r\n\x1a\nhello", "image/png")},
+        follow_redirects=True,
+    )
+    assert "Photo saved." in saved.text
+    assert "Change photo" in saved.text
+    assert 'src="/account/avatar' in saved.text
+    avatar = client.get("/account/avatar")
+    assert avatar.status_code == 200
+    assert avatar.headers["content-type"].startswith("image/png")
+    assert avatar.content.startswith(b"\x89PNG")
+    home = client.get("/")
+    assert 'src="/account/avatar' in home.text
+    refused = client.post(
+        "/settings/avatar",
+        files={"photo": ("notes.txt", b"not a photo", "text/plain")},
+        follow_redirects=True,
+    )
+    assert "PNG, JPEG, GIF, or WebP" in refused.text
+    assert client.get("/account/avatar").content.startswith(b"\x89PNG")
+
+
+def test_canvas_profile_photo_is_saved_with_the_token(monkeypatch):
+    png = b"\x89PNG\r\n\x1a\nhello"
+
+    def fake_account(base, token):
+        assert token == "1042~secret"
+        return {
+            "name": "Ada Lovelace",
+            "avatar_url": "https://bcourses.berkeley.edu/images/thumbnails/1",
+        }
+
+    class Response:
+        status_code = 200
+        content = png
+        headers = {}
+
+    monkeypatch.setattr("berkeleypulse.app.canvas_account", fake_account)
+    monkeypatch.setattr("berkeleypulse.app.httpx.get", lambda *args, **kwargs: Response())
+    client = browser()
+    saved = client.post("/sign-in/canvas", data={"canvas_token": "1042~secret"}, follow_redirects=True)
+    assert "Ada Lovelace" in saved.text
+    page = client.get("/settings")
+    assert "<h1>Ada Lovelace</h1>" in page.text
+    assert "oski@berkeley.edu" in page.text
+    assert 'src="/account/avatar' in page.text
+    assert client.get("/account/avatar").content == png
 
 
 def test_saved_cookies_are_limited_to_school_sites():

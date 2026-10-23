@@ -9,7 +9,7 @@
     Canvas {{ "connected" if desk.canvas == "connected" else ("failed" if desk.canvas == "failed" else "not connected") }}
   </p>
   <p>
-    <img class="status-logo pixel" src="/static/logos/calcentral.png?v=pixel" alt="" width="16" height="16">
+    <img class="status-logo" src="/static/logos/calcentral.png?v=mark" alt="" width="16" height="16">
     <span class="dot {{ 'on' if desk.calcentral == 'connected' else ('bad' if desk.calcentral == 'failed' else '') }}"></span>
     CalCentral {{ "connected" if desk.calcentral == "connected" else ("failed" if desk.calcentral == "failed" else "not connected") }}
   </p>
@@ -26,7 +26,12 @@
 </section>
 
 {% if demo %}
-<p class="banner">This is a sample semester stored only on this computer. Remove it before you scan your own courses.</p>
+<div class="banner">
+  <p>This is a sample semester stored only on this computer. Remove it before you scan your own courses.</p>
+  <form method="post" action="/demo/clear">
+    <button class="quiet" type="submit">Remove demo</button>
+  </form>
+</div>
 {% endif %}
 
 {% if not courses and not emails %}
@@ -48,7 +53,6 @@
   <div class="cal-head week-top">
     <h1>{{ week.label }} <span class="week-num">{{ week.number }}</span></h1>
     <div class="cal-tools">
-      <p class="week-save" role="status"></p>
       <div class="view-toggle" role="group" aria-label="Calendar view">
         <a class="on" href="/?view=week&amp;week={{ week.key }}" aria-current="page">Week</a>
         <a href="/?view=month&amp;month={{ week.month_key }}">Month</a>
@@ -64,33 +68,38 @@
       </a>
     </div>
   </div>
-  <div class="week-scroll">
-    <div class="week-columns">
+  <div class="week-board">
+    <div class="week-days">
+      <div class="week-gutter"></div>
       {% for day in week.days %}
-      <section class="week-day{% if day.today %} today{% endif %}">
-        <header>
-          <strong>{{ day.number }} <small>{{ day.month }}</small></strong>
-          <span>{{ day.weekday }}</span>
-        </header>
-        <ul class="week-events">
-          {% for item in day["items"] %}
-          <li class="{{ item.kind }}">{{ item.label }}</li>
-          {% endfor %}
-          {% if day.extra %}<li class="more">+{{ day.extra }}</li>{% endif %}
-        </ul>
-        {% for line in day.lines %}
-        <input class="week-line" data-day="{{ day.iso }}" data-slot="{{ loop.index0 }}" value="{{ line }}" maxlength="240" aria-label="{{ day.weekday }} {{ day.number }} line {{ loop.index }}" autocomplete="off" spellcheck="false">
-        {% endfor %}
-      </section>
+      <div class="week-dayhead{% if day.today %} today{% endif %}" data-day="{{ day.iso }}">
+        <span>{{ day.weekday }}</span>
+        <strong>{{ day.number }} <small>{{ day.month }}</small></strong>
+      </div>
       {% endfor %}
     </div>
+    {% if week.slots %}
+    <ol class="week-slots">
+      {% for slot in week.slots %}
+      <li class="week-slot">
+        <time>{{ slot.time }}</time>
+        {% for day in slot.days %}
+        <div class="week-cell">
+          {% for item in day["items"] %}
+          <article class="slot-box {{ item.kind }}">
+            <strong>{{ item.title }}</strong>
+            {% if item.details %}<span>{{ item.details }}</span>{% endif %}
+          </article>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="slot-empty">Nothing scheduled this week.</p>
+    {% endif %}
   </div>
-  <section class="someday">
-    <h2>Someday</h2>
-    {% for line in week.someday %}
-    <input class="week-line" data-day="someday" data-slot="{{ loop.index0 }}" value="{{ line }}" maxlength="240" aria-label="Someday line {{ loop.index }}" autocomplete="off" spellcheck="false">
-    {% endfor %}
-  </section>
   {% else %}
   <div class="month">
     <div class="cal-head">
@@ -173,7 +182,6 @@
 <section class="scan-row">
   <div>
     <h2>Scan</h2>
-    <p>You start it. Pulse does not browse on its own. Live things update: due dates, assignments, new mail, and a class that was moved or canceled. Course PDFs are read once. A paper by an author is left alone. A later scan opens a folder only when its modified date changes.</p>
   </div>
   <form method="post" action="/scan"><button type="submit">Scan now</button></form>
 </section>
@@ -268,36 +276,66 @@
     </section>
   </aside>
 </div>
+
+<div class="universe" data-universe>
+  <button class="universe-launch" type="button" aria-expanded="false" aria-controls="universe-box">
+    <span class="universe-launch-plus" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </span>
+    <span>Universe</span>
+  </button>
+  <section class="proposal" data-proposal hidden aria-live="polite" aria-label="Proposed calendar. Click to clear.">
+    <p class="proposal-count"></p>
+    <div class="proposal-boards">
+      <section>
+        <h2>Old schedule</h2>
+        <div data-proposal-old></div>
+      </section>
+      <section>
+        <h2>New schedule</h2>
+        <div data-proposal-new></div>
+      </section>
+    </div>
+  </section>
+  <form id="universe-box" class="universe-box" action="/universe" method="post" enctype="multipart/form-data" hidden>
+    <button class="universe-close" type="button" aria-label="Close Universe">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+    <ul class="universe-images" hidden></ul>
+    <label class="universe-sr" for="universe-prompt">Message</label>
+    <textarea id="universe-prompt" name="prompt" rows="1" maxlength="4000" placeholder="Scribble a class, deadline, or block"></textarea>
+    <p class="universe-thinking" hidden>
+      <span>Thinking</span>
+      <span class="universe-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </p>
+    <p class="universe-note" hidden role="status"></p>
+    <div class="universe-bar">
+      <div class="universe-attach">
+        <button class="universe-plus" type="button" aria-label="Add images">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+        <span class="universe-count" hidden></span>
+      </div>
+      <div class="universe-modes" role="radiogroup" aria-label="Mode">
+        <label>
+          <input type="radio" name="mode" value="plan" checked>
+          <span>Plan</span>
+        </label>
+        <label>
+          <input type="radio" name="mode" value="study">
+          <span>Study</span>
+        </label>
+      </div>
+      <p class="universe-hint">A proposed calendar addition</p>
+      <button class="universe-send" type="submit" aria-label="Send" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <input class="universe-file" type="file" name="images" accept="image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp" multiple>
+  </form>
 </div>
-<script>
-  var lines = document.querySelectorAll(".week-line");
-  var note = document.querySelector(".week-save");
-  lines.forEach(function (input) {
-    var timer = 0;
-    function save() {
-      var body = new FormData();
-      body.set("day", input.getAttribute("data-day"));
-      body.set("slot", input.getAttribute("data-slot"));
-      body.set("body", input.value);
-      fetch("/notes", {
-        method: "POST",
-        body: body,
-        headers: { Accept: "application/json" },
-        credentials: "same-origin"
-      }).then(function (response) {
-        return response.json();
-      }).then(function (data) {
-        if (!note) return;
-        note.textContent = data.ok ? "Saved" : "Could not save";
-      }).catch(function () {
-        if (note) note.textContent = "Could not save";
-      });
-    }
-    input.addEventListener("input", function () {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(save, 400);
-    });
-    input.addEventListener("change", save);
-  });
-</script>
+</div>
+{% endblock %}
+{% block extra %}
+<script src="/static/universe.js?v=4"></script>
 {% endblock %}

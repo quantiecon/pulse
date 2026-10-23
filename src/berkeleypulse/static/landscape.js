@@ -22,8 +22,7 @@
   var pointer = { x: 0.5, y: 0.62, strength: 0 };
   var target = { x: 0.5, y: 0.62, strength: 0 };
   var ripples = [];
-  var novas = [];
-  var nextNova = 0.8 + Math.random() * 1.4;
+  var landing = document.body && document.body.classList.contains("gate");
   var stars = buildStars();
   var galaxy = buildGalaxy();
   var toggle = document.getElementById("field-motion");
@@ -51,11 +50,13 @@
 
   function buildStars() {
     var points = [];
-    for (var index = 0; index < 920; index++) {
+    var count = landing ? 1400 : 920;
+    for (var index = 0; index < count; index++) {
       var faint = unit(index + 31) > 0.42;
+      var roll = unit(index + 19);
       points.push({
         x: 0.008 + unit(index) * 0.984,
-        y: 0.012 + unit(index + 19) * 0.64,
+        y: landing ? 0.004 + Math.pow(roll, 1.75) * 0.64 : 0.012 + roll * 0.64,
         radius: unit(index + 8) > 0.97 ? 1.35 : faint ? 0.42 : 0.55 + unit(index + 4) * 0.4,
         alpha: faint ? 0.16 + unit(index + 2) * 0.28 : 0.48 + unit(index + 2) * 0.46,
         phase: unit(index + 6) * TAU,
@@ -293,177 +294,10 @@
     return { mask: mask, cols: cols, cell: cell };
   }
 
-  function scheduleNova(t) {
-    nextNova = t + 5.5 + Math.random() * 6.5;
-  }
-
-  function spawnNova(t) {
-    if (!w || !h || novas.length) return false;
-    var sky = [];
-    for (var index = 0; index < stars.length; index++) {
-      var candidate = stars[index];
-      if (candidate.dead || candidate.tuck || candidate.y < 0.035 || candidate.y > 0.46) continue;
-      if (candidate.x < 0.03 || candidate.x > 0.97) continue;
-      if (candidate.x > 0.18 && candidate.x < 0.72 && candidate.y > 0.2) continue;
-      sky.push(candidate);
-    }
-    if (!sky.length) return false;
-    var star = sky[(Math.random() * sky.length) | 0];
-    for (var attempt = 0; attempt < 8 && insideGalaxy(star.x * w, star.y * h); attempt++) {
-      star = sky[(Math.random() * sky.length) | 0];
-    }
-    if (insideGalaxy(star.x * w, star.y * h)) return false;
-    star.dead = true;
-    novas.push({
-      x: star.x,
-      y: star.y,
-      startedAt: t,
-      duration: 12,
-      spin: Math.random() * TAU
-    });
-    return true;
-  }
-
-  function covered(mask, x, y) {
-    var cols = mask.cols;
-    var gridRows = mask.mask.length / cols;
-    var cx = Math.floor(x / mask.cell);
-    var cy = Math.floor(y / mask.cell);
-    return cx >= 0 && cy >= 0 && cx < cols && cy < gridRows && mask.mask[cy * cols + cx];
-  }
-
-  function novaEase(edge0, edge1, value) {
-    var mix = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-    return mix * mix * (3 - 2 * mix);
-  }
-
-  function holePoint(x, y, shadow, angle, time) {
-    var wobble = 1
-      + 0.045 * Math.sin(angle * 4 + time * 2.2)
-      + 0.028 * Math.sin(angle * 7 - time * 1.5);
-    return {
-      x: x + Math.cos(angle) * shadow * wobble,
-      y: y + Math.sin(angle) * shadow * wobble
-    };
-  }
-
-  function drawBlackHole(x, y, shadow, alpha, time) {
-    if (shadow < 0.5 || alpha < 0.02) return;
-    var steps = 72;
-    ctx.beginPath();
-    for (var step = 0; step <= steps; step++) {
-      var point = holePoint(x, y, shadow, (step / steps) * TAU, time);
-      if (step === 0) ctx.moveTo(point.x, point.y);
-      else ctx.lineTo(point.x, point.y);
-    }
-    ctx.closePath();
-    ctx.fillStyle = "#000";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,236,210," + (0.72 * alpha) + ")";
-    ctx.lineWidth = 1.15;
-    ctx.lineJoin = "round";
-    ctx.stroke();
-    var glint = time * 1.6;
-    ctx.strokeStyle = "rgba(255,255,255," + (0.95 * alpha) + ")";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (step = 0; step <= 10; step++) {
-      var point = holePoint(x, y, shadow, glint + (step / 10) * 0.9, time);
-      if (step === 0) ctx.moveTo(point.x, point.y);
-      else ctx.lineTo(point.x, point.y);
-    }
-    ctx.stroke();
-  }
-
-  function drawNovas(t, mask) {
-    for (var index = 0; index < novas.length; index++) {
-      var nova = novas[index];
-      var progress = (t - nova.startedAt) / nova.duration;
-      if (progress <= 0 || progress >= 1) continue;
-      var x = nova.x * w;
-      var y = nova.y * h;
-      if (insideGalaxy(x, y)) continue;
-      var age = t - nova.startedAt;
-      var swell = novaEase(0.01, 0.18, progress);
-      var implode = novaEase(0.32, 0.48, progress);
-      var formed = novaEase(0.36, 0.48, progress);
-      var collapse = Math.pow(novaEase(0.42, 1, progress), 1.7);
-      var fadeOut = 1 - novaEase(0.96, 1, progress);
-      var radius = (3.5 + swell * 28) * (1 - implode);
-      var spin = nova.spin + age * (1.1 + implode * 2);
-      if (radius > 0.8 && formed < 0.98) {
-        var body = ctx.createRadialGradient(x - radius * 0.32, y - radius * 0.36, radius * 0.05, x, y, radius);
-        body.addColorStop(0, "rgba(255,255,248," + (0.98 * (1 - formed)) + ")");
-        body.addColorStop(0.22, "rgba(255,214,90," + (0.95 * (1 - formed)) + ")");
-        body.addColorStop(0.55, "rgba(255,96,28," + (0.9 * (1 - formed)) + ")");
-        body.addColorStop(0.82, "rgba(180,24,48," + (0.75 * (1 - formed)) + ")");
-        body.addColorStop(1, "rgba(80,10,30,0)");
-        ctx.fillStyle = body;
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, TAU);
-        ctx.fill();
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, TAU);
-        ctx.clip();
-        ctx.globalAlpha = 1 - formed;
-        var shade = ctx.createRadialGradient(x + radius * 0.42, y + radius * 0.48, radius * 0.05, x, y, radius);
-        shade.addColorStop(0, "rgba(40,0,8,0.72)");
-        shade.addColorStop(0.55, "rgba(40,0,8,0.15)");
-        shade.addColorStop(1, "rgba(40,0,8,0)");
-        ctx.fillStyle = shade;
-        ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
-        ctx.lineWidth = Math.max(1.2, radius * 0.08);
-        for (var band = 0; band < 4; band++) {
-          ctx.strokeStyle = band % 2 ? "rgba(255,236,180,0.55)" : "rgba(255,90,30,0.45)";
-          ctx.beginPath();
-          ctx.ellipse(x, y, radius * (0.72 + band * 0.06), radius * 0.28, spin * 0.35 + band * 0.9, 0, TAU);
-          ctx.stroke();
-        }
-        ctx.restore();
-        ctx.globalAlpha = 1;
-        for (var tongue = 0; tongue < 16; tongue++) {
-          var lat = (unit(tongue + 4) - 0.5) * Math.PI * 0.9;
-          var lon = unit(tongue + 13) * TAU + spin * (0.7 + unit(tongue) * 0.5);
-          var depth = Math.cos(lat) * Math.cos(lon);
-          if (depth < -0.2) continue;
-          var rimX = x + Math.cos(lat) * Math.sin(lon) * radius;
-          var rimY = y + Math.sin(lat) * radius;
-          var flick = 0.12 + unit(tongue + 8) * 0.38 * Math.max(0.2, depth);
-          ctx.strokeStyle = "rgba(255,120,40," + ((depth > 0.35 ? 0.9 : 0.7) * (1 - formed)) + ")";
-          ctx.lineWidth = Math.max(1, radius * 0.045 * (0.4 + Math.max(0, depth)));
-          ctx.lineCap = "round";
-          ctx.beginPath();
-          ctx.moveTo(rimX, rimY);
-          ctx.lineTo(x + Math.cos(lat) * Math.sin(lon) * radius * (1 + flick), y + Math.sin(lat) * radius * (1 + flick));
-          ctx.stroke();
-        }
-      }
-      var shadow = (5 + formed * 9) * (1 - collapse);
-      drawBlackHole(x, y, shadow, formed * fadeOut, age);
-      var wave = novaEase(0.04, 0.28, progress);
-      var waveFade = (1 - novaEase(0.24, 0.42, progress)) * (1 - formed);
-      if (wave > 0.02 && waveFade > 0.04) {
-        ctx.lineCap = "round";
-        ctx.strokeStyle = "rgba(255,236,200," + (0.55 * waveFade) + ")";
-        ctx.lineWidth = 1.3;
-        ctx.beginPath();
-        ctx.arc(x, y, 6 + wave * 70, 0, TAU);
-        ctx.stroke();
-        ctx.strokeStyle = "rgba(120,210,255," + (0.4 * waveFade) + ")";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(x, y, 4 + wave * 48, 0, TAU);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-    }
-  }
-
   function drawStars(t) {
     for (var index = 0; index < stars.length; index++) {
       var star = stars[index];
-      if (star.dead || star.tuck) continue;
+      if (star.tuck) continue;
       var x = star.x * w;
       var y = star.y * h;
       if (insideGalaxy(x, y)) continue;
@@ -533,7 +367,6 @@
     var seconds = elapsed / 1000;
     drawStars(seconds);
     drawGalaxy(seconds);
-    drawNovas(seconds);
   }
 
   function animate(now) {
@@ -548,13 +381,6 @@
     elapsed += delta;
     var skyTime = elapsed / 1000;
     while (ripples.length && skyTime - ripples[0].startedAt >= RIPPLE) ripples.shift();
-    for (var novaIndex = novas.length - 1; novaIndex >= 0; novaIndex--) {
-      if (skyTime - novas[novaIndex].startedAt >= novas[novaIndex].duration) novas.splice(novaIndex, 1);
-    }
-    if (skyTime >= nextNova) {
-      if (spawnNova(skyTime)) scheduleNova(skyTime);
-      else nextNova = skyTime + 0.35;
-    }
     var easing = 1 - Math.exp(-delta / 160);
     pointer.x += (target.x - pointer.x) * easing;
     pointer.y += (target.y - pointer.y) * easing;

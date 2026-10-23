@@ -79,7 +79,7 @@
 </section>
 
 <section class="card">
-  <h2 class="service"><img class="pixel" src="/static/logos/calcentral.png?v=pixel" alt="" width="22" height="22">CalCentral</h2>
+  <h2 class="service"><img src="/static/logos/calcentral.png?v=mark" alt="" width="22" height="22">CalCentral</h2>
   <p>{% if desk.calcentral == "connected" %}<span class="pill ok">Connected</span>{% elif desk.calcentral == "failed" %}<span class="pill bad">Failed</span>{% else %}<span class="pill quiet">Not connected</span>{% endif %}</p>
   {% if desk.calcentral == "failed" %}<p class="muted">Pulse tried CalCentral with the saved key and it was rejected. Allow it again.</p>{% endif %}
   <p class="muted">Open the syllabus page, allow it, then save that page. The policy is parsed once.</p>

@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex">
   <title>{% block title %}Pulse{% endblock %}</title>
   <link rel="icon" href="/static/logos/galaxy.svg?v=favicon" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=support">
+  <link rel="stylesheet" href="/static/styles.css?v=lockin">
   {% if posthog %}
   <script>
     !function(t,e){var o,n,p,r;e.__SV||(window.posthog&&window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],Object.defineProperty(u,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e}}),Object.defineProperty(u.people,"toString",{configurable:!0,enumerable:!0,writable:!0,value:function(){return u.toString(1)+".people (stub)"}}),o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
@@ -56,7 +56,6 @@
         <a href="/">Calendar</a>
         <a href="/sign-in">Connect</a>
         <a href="/#mail">Mail</a>
-        <a href="/settings">Settings</a>
       </nav>
       {% if settings %}
       <div class="top-actions">
@@ -73,14 +72,20 @@
           <button class="quiet" type="submit">Manage plan</button>
         </form>
         {% endif %}
-        {% if demo %}
-        <form method="post" action="/demo/clear">
-          <button class="quiet" type="submit">Remove demo</button>
-        </form>
-        {% else %}
-        <form method="post" action="/demo">
-          <button class="quiet" type="submit">Load demo</button>
-        </form>
+        {% if account %}
+        <div class="account-menu">
+          <button class="avatar-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Account menu for {{ account.name }}">
+            {% if account.avatar %}
+            <img src="/account/avatar?v={{ account.avatar_v }}" alt="">
+            {% else %}
+            <span aria-hidden="true">{{ account.initials }}</span>
+            {% endif %}
+          </button>
+          <div class="account-drop" role="menu" hidden>
+            <a role="menuitem" href="mailto:help@galaxycal.com">Support</a>
+            <a role="menuitem" href="/settings">Settings</a>
+          </div>
+        </div>
         {% endif %}
       </div>
       {% endif %}
@@ -108,6 +113,24 @@
     {% endif %}
   </footer>
   <script>
+    var accountMenu = document.querySelector(".account-menu");
+    if (accountMenu) {
+      var accountToggle = accountMenu.querySelector(".avatar-button");
+      var accountDrop = accountMenu.querySelector(".account-drop");
+      function setAccountOpen(open) {
+        accountDrop.hidden = !open;
+        accountToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+      accountToggle.addEventListener("click", function () {
+        setAccountOpen(accountDrop.hidden);
+      });
+      document.addEventListener("click", function (event) {
+        if (!accountMenu.contains(event.target)) setAccountOpen(false);
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") setAccountOpen(false);
+      });
+    }
     document.querySelectorAll(".switch").forEach(function (button) {
       button.addEventListener("click", function () {
         var card = button.closest("li");
@@ -133,6 +156,13 @@
   {% endif %}
   {% block extra %}{% endblock %}
   </div>
-  <script src="/static/landscape.js?v=field2"></script>
+  {% if settings %}
+  <button class="lockin" type="button" data-lockin data-minutes="{{ settings.session_minutes }}" aria-pressed="false">
+    <span class="lockin-label">Lock in</span>
+    <time class="lockin-time" hidden></time>
+  </button>
+  <script src="/static/lockin.js?v=1"></script>
+  {% endif %}
+  <script src="/static/landscape.js?v=sky"></script>
 </body>
 </html>

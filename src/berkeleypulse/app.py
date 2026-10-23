@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -8,7 +9,7 @@ import secrets
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -18,9 +19,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from berkeleypulse.billing import BillingError, billing_state, checkout_url, handle_webhook, portal_url, sync_session
-from berkeleypulse.canvas import CanvasError, verify_canvas_token
+from berkeleypulse.canvas import CanvasError, canvas_account
 from berkeleypulse.config import data_dir, load_settings, locked_fields, posthog_public, update_settings
-from berkeleypulse.db import db, meta_get
+from berkeleypulse.db import db, meta_get, meta_set
 from berkeleypulse.demo import clear_demo, seed_demo
 from berkeleypulse.desk import DeskError, access_report, open_desk, read_page_text, save_session
 from berkeleypulse.ics import build_calendar
@@ -39,6 +40,7 @@ from berkeleypulse.sync import (
     sync_all,
 )
 from berkeleypulse.textutil import pdf_to_text
+from berkeleypulse.universe import interpret, propose, read_schedule_image
 
 BASE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
@@ -82,15 +84,15 @@ def create_app() -> FastAPI:
                 return JSONResponse({"ok": False, "error": message})
             return _render(request, "login.html", _login_context(email=email.strip(), email_error=message))
         try:
-            _issue_login_code(address)
+            retry_after = _issue_login_code(address)
         except LoginMailError as exc:
             message = str(exc)
             if wants_json:
                 return JSONResponse({"ok": False, "error": message})
             return _render(request, "login.html", _login_context(email=address, email_error=message))
         if wants_json:
-            return JSONResponse({"ok": True, "email": address, "next": "code"})
-        return _render(request, "login.html", _login_context(code_for=address))
+            return JSONResponse({"ok": True, "email": address, "next": "code", "retry_after": retry_after})
+        return _render(request, "login.html", _login_context(code_for=address, resend_after=retry_after or RESEND_SECONDS))
 
     @app.post("/login/code")
     def submit_login_code(request: Request, email: str = Form(""), code: str = Form("")):
@@ -109,7 +111,11 @@ def create_app() -> FastAPI:
         if message:
             if wants_json:
                 return JSONResponse({"ok": False, "error": message, "email": address})
-            return _render(request, "login.html", _login_context(code_for=address, code_error=message))
+            return _render(
+                request,
+                "login.html",
+                _login_context(code_for=address, code_error=message, resend_after=_resend_wait(address)),
+            )
         return _start_session(request, address, wants_json)
 
     @app.post("/billing/checkout")
@@ -160,9 +166,17 @@ def create_app() -> FastAPI:
         view: str = "",
         week: str = "",
     ):
-        context = _home_context(notice, level, q, course, deleted, month, day, view, week)
-        context["editing"] = editing == "courses"
-        return _render(request, "home.html", context)
+        try:
+            context = _home_context(notice, level, q, course, deleted, month, day, view, week)
+            context["editing"] = editing == "courses"
+            return _render(request, "home.html", context)
+        except Exception as exc:
+            print("calendar render failed: %s: %s" % (type(exc).__name__, exc))
+            return HTMLResponse(
+                "<!DOCTYPE html><title>Calendar</title><p>The calendar could not open. Refresh and try again.</p>",
+                status_code=500,
+                headers={"cache-control": "private, no-store"},
+            )
 
     @app.post("/notes")
     def save_note(request: Request, day: str = Form(""), slot: str = Form(""), body: str = Form("")):
@@ -187,6 +201,14 @@ def create_app() -> FastAPI:
         if wants_json:
             return JSONResponse({"ok": True, "day": target, "slot": index, "body": text})
         return _redirect("/")
+
+    @app.post("/universe")
+    async def receive_universe(request: Request):
+        form = await request.form()
+        try:
+            return await _accept_universe(request, form)
+        finally:
+            await form.close()
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings_page(request: Request, notice: str = "", level: str = ""):
@@ -243,6 +265,30 @@ def create_app() -> FastAPI:
         reschedule()
         return _redirect("/settings", "Settings saved. Study blocks were rebuilt for the way you work.")
 
+    @app.post("/settings/avatar")
+    def save_avatar(photo: UploadFile = File(...)):
+        data = photo.file.read()
+        if not data:
+            return _redirect("/settings", "Choose a photo first.", "error")
+        if len(data) > 2_000_000:
+            return _redirect("/settings", "That photo is larger than 2 MB.", "error")
+        media = _image_kind(data)
+        if not media:
+            return _redirect("/settings", "Use a PNG, JPEG, GIF, or WebP photo.", "error")
+        _write_avatar(data, media)
+        return _redirect("/settings", "Photo saved.")
+
+    @app.get("/account/avatar")
+    def account_avatar():
+        path = _avatar_path()
+        if not path.is_file():
+            raise HTTPException(status_code=404)
+        with db() as conn:
+            media = meta_get(conn, "account_avatar_type", "image/jpeg")
+        if media not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+            media = "image/jpeg"
+        return Response(path.read_bytes(), media_type=media, headers={"Cache-Control": "private, max-age=300"})
+
     @app.post("/scan")
     @app.post("/sync")
     def run_scan():
@@ -263,11 +309,12 @@ def create_app() -> FastAPI:
             return _redirect("/sign-in", "Paste the access token by itself, with no spaces.", "error")
         settings = load_settings()
         try:
-            name = verify_canvas_token(settings.canvas_base_url, token)
+            profile = canvas_account(settings.canvas_base_url, token)
         except CanvasError as exc:
             return _redirect("/sign-in", str(exc), "error")
         update_settings(canvas_token=token)
-        return _redirect("/sign-in", "bCourses token saved for %s." % name)
+        _remember_account(profile, token, settings.canvas_base_url)
+        return _redirect("/sign-in", "bCourses token saved for %s." % profile["name"])
 
     @app.post("/sign-in/open")
     def open_sign_in(target: str = Form("canvas")):
@@ -499,13 +546,11 @@ def _install_auth(app: FastAPI) -> None:
     @app.middleware("http")
     async def check_auth(request: Request, call_next):
         path = request.url.path
-        if path in _PUBLIC_PATHS or path in _PUBLIC_STATIC:
-            return await call_next(request)
         if path == "/calendar.ics" and _calendar_token_ok(request.query_params.get("token", "")):
-            return await call_next(request)
-        if _signed_in(request):
-            return await call_next(request)
-        return RedirectResponse("/login", status_code=303)
+            return _stamp_cache(await call_next(request), path)
+        if path in _PUBLIC_PATHS or path in _PUBLIC_STATIC or _signed_in(request):
+            return _stamp_cache(await call_next(request), path)
+        return _see_other("/login")
 
 
 def _wants_json(request: Request) -> bool:
@@ -518,6 +563,7 @@ def _login_context(
     email_error: str = "",
     code_for: str = "",
     code_error: str = "",
+    resend_after: int = 0,
 ) -> dict:
     return {
         "error": error,
@@ -525,6 +571,7 @@ def _login_context(
         "email_error": email_error,
         "code_for": code_for,
         "code_error": code_error,
+        "resend_after": resend_after,
     }
 
 
@@ -563,15 +610,30 @@ def send_login_code(address: str, code: str) -> None:
         raise LoginMailError("The code could not be sent.")
 
 
-def _issue_login_code(address: str) -> None:
+RESEND_SECONDS = 59
+
+
+def _resend_wait(address: str) -> int:
     now = datetime.now(ZoneInfo("UTC"))
-    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     with db() as conn:
         row = conn.execute("SELECT created_at FROM login_codes WHERE email = ?", (address,)).fetchone()
-        if row:
-            created = datetime.strptime(row["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=ZoneInfo("UTC"))
-            if now - created < timedelta(seconds=30):
-                return
+    if not row:
+        return 0
+    created = datetime.strptime(row["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=ZoneInfo("UTC"))
+    elapsed = int((now - created).total_seconds())
+    if elapsed < 0:
+        return RESEND_SECONDS
+    if elapsed >= RESEND_SECONDS:
+        return 0
+    return RESEND_SECONDS - elapsed
+
+
+def _issue_login_code(address: str) -> int:
+    now = datetime.now(ZoneInfo("UTC"))
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    wait = _resend_wait(address)
+    if wait:
+        return wait
     code = "%06d" % secrets.randbelow(1000000)
     send_login_code(address, code)
     salt = secrets.token_hex(16)
@@ -595,6 +657,7 @@ def _issue_login_code(address: str) -> None:
             "INSERT OR IGNORE INTO interest(email, created_at) VALUES(?, ?)",
             (address, stamp),
         )
+    return 0
 
 
 def _consume_login_code(address: str, code: str) -> str:
@@ -621,18 +684,23 @@ def _consume_login_code(address: str, code: str) -> str:
 
 
 def _start_session(request: Request, address: str, wants_json: bool):
-    token = secrets.token_urlsafe(32)
+    token = _seal_session(address) or secrets.token_urlsafe(32)
     created = datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
-    with db() as conn:
-        conn.execute(
-            "INSERT INTO sessions(token, email, created_at) VALUES(?, ?, ?)",
-            (token, address, created),
-        )
+    try:
+        with db() as conn:
+            conn.execute(
+                "INSERT INTO sessions(token, email, created_at) VALUES(?, ?, ?)",
+                (token, address, created),
+            )
+    except Exception:
+        if not token.startswith("v1."):
+            raise
     nxt = "/" if _auth_token_ok(request.cookies.get("pulse_auth", "")) else "/login"
     if wants_json:
         response = JSONResponse({"ok": True, "email": address, "next": nxt})
     else:
-        response = RedirectResponse(nxt, status_code=303)
+        response = _see_other(nxt)
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
     response.set_cookie(
         "pulse_session",
         token,
@@ -640,20 +708,97 @@ def _start_session(request: Request, address: str, wants_json: bool):
         samesite="lax",
         path="/",
         max_age=60 * 60 * 24 * 400,
-        secure=request.url.scheme == "https",
+        secure=request.url.scheme == "https" or forwarded == "https",
     )
     return response
 
 
 def _session_email(request: Request) -> str:
     token = request.cookies.get("pulse_session", "")
-    if not token or len(token) > 200:
+    if not token or len(token) > 500:
         return ""
-    with db() as conn:
-        row = conn.execute("SELECT email FROM sessions WHERE token = ?", (token,)).fetchone()
+    sealed = _open_sealed_session(token)
+    if sealed:
+        return sealed
+    try:
+        with db() as conn:
+            row = conn.execute("SELECT email FROM sessions WHERE token = ?", (token,)).fetchone()
+    except Exception:
+        return ""
     if not row:
         return ""
     return _berkeley_email(row["email"])
+
+
+def _session_secret() -> str:
+    for key in ("PULSE_SESSION_SECRET", "RESEND_SECRET", "PULSE_AUTH_TOKEN"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _seal_session(address: str) -> str:
+    secret = _session_secret()
+    if not secret:
+        return ""
+    expires = int(datetime.now(ZoneInfo("UTC")).timestamp()) + 60 * 60 * 24 * 400
+    payload = ("%s\n%d" % (address, expires)).encode()
+    signature = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+    return "v1.%s.%s" % (_b64encode(payload), _b64encode(signature))
+
+
+def _open_sealed_session(token: str) -> str:
+    secret = _session_secret()
+    if not secret or not token.startswith("v1."):
+        return ""
+    parts = token.split(".")
+    if len(parts) != 3:
+        return ""
+    try:
+        payload = _b64decode(parts[1])
+        signature = _b64decode(parts[2])
+    except Exception:
+        return ""
+    expected = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+    if len(signature) != len(expected) or not hmac.compare_digest(signature, expected):
+        return ""
+    try:
+        email, raw_expires = payload.decode().split("\n", 1)
+        expires = int(raw_expires)
+    except ValueError:
+        return ""
+    if expires < int(datetime.now(ZoneInfo("UTC")).timestamp()):
+        return ""
+    return _berkeley_email(email)
+
+
+def _b64encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode().rstrip("=")
+
+
+def _b64decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def _see_other(url: str) -> RedirectResponse:
+    response = RedirectResponse(url, status_code=303)
+    body = (
+        '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=%s"></head>'
+        '<body><a href="%s">Continue</a></body></html>' % (url, url)
+    ).encode()
+    response.body = body
+    response.headers["content-length"] = str(len(body))
+    response.headers["content-type"] = "text/html; charset=utf-8"
+    response.headers["cache-control"] = "private, no-store"
+    return response
+
+
+def _stamp_cache(response, path: str):
+    if path.startswith("/static/"):
+        return response
+    response.headers["cache-control"] = "private, no-store"
+    return response
 
 
 def _auth_token_ok(given: str) -> bool:
@@ -672,6 +817,195 @@ def _signed_in(request: Request) -> bool:
     if not _session_email(request):
         return False
     return _auth_token_ok(request.cookies.get("pulse_auth", ""))
+
+
+def _avatar_path() -> Path:
+    return data_dir() / "avatar"
+
+
+async def _accept_universe(request: Request, form):
+    mode = str(form.get("mode") or "").strip()
+    raw = form.get("prompt")
+    prompt = "" if getattr(raw, "filename", None) is not None else str(raw or "").strip()
+    uploads = [item for item in form.getlist("images") if getattr(item, "filename", "")]
+    if mode not in {"plan", "study"}:
+        return _universe_error(request, "Choose Plan or Study.")
+    if len(prompt) > 4000:
+        return _universe_error(request, "Keep that under 4000 characters.")
+    if len(uploads) > 10:
+        return _universe_error(request, "Universe takes up to 10 images.")
+    if not prompt and not uploads:
+        return _universe_error(request, "Write something or add an image.")
+    images = []
+    for item in uploads:
+        data = await item.read(8_000_001)
+        if len(data) > 8_000_000:
+            return _universe_error(request, "Each image needs to be 8 MB or smaller.")
+        kind = _image_kind(data)
+        if not kind:
+            return _universe_error(request, "Use a PNG, JPEG, GIF, or WebP image.")
+        images.append((data, kind))
+    if mode == "study":
+        message = "Universe received that. A study plan is next."
+        if _wants_json(request):
+            return JSONResponse({"ok": True, "mode": "study", "message": message})
+        return _redirect("/", message)
+    settings = load_settings()
+    tz = ZoneInfo(settings.timezone)
+    now = datetime.now(tz)
+    incoming, reason = interpret(prompt, now) if prompt else ([], "")
+    if images:
+        read, problem = read_schedule_image(images, settings, now)
+        incoming.extend(read)
+        if problem and not incoming:
+            return _universe_error(request, problem)
+    if not incoming:
+        return _universe_error(request, reason or "Name the day and what to add.")
+    with db() as conn:
+        existing = _open_events(conn, tz)
+    result = propose(incoming, existing)
+    if not result["added"] and not result["changed"] and not result["conflicts"]:
+        return _universe_error(request, "That is already on the calendar.")
+    if _wants_json(request):
+        return JSONResponse({"ok": True, "mode": "plan", **result})
+    return _redirect(
+        "/",
+        "A calendar proposal: %d added, %d changed, %d conflicts."
+        % (result["added"], result["changed"], result["conflicts"]),
+    )
+
+
+def _universe_error(request: Request, message: str):
+    if _wants_json(request):
+        return JSONResponse({"ok": False, "error": message}, status_code=400)
+    return _redirect("/", message, "error")
+
+
+def _open_events(conn, tz):
+    hidden = {item["signature"] for item in conn.execute("SELECT signature FROM hidden_events")}
+    rows = conn.execute(
+        """
+        SELECT events.*, courses.code AS code
+        FROM events
+        JOIN courses ON courses.id = events.course_id
+        WHERE courses.hidden = 0
+        """
+    ).fetchall()
+    items = []
+    for row in rows:
+        if _event_signature(row) in hidden:
+            continue
+        start = parse_dt(row["starts_at"])
+        end = parse_dt(row["ends_at"])
+        if start is None:
+            continue
+        start = start.astimezone(tz)
+        end = end.astimezone(tz) if end is not None else start + timedelta(minutes=30)
+        if end <= start:
+            end = start + timedelta(minutes=30)
+        items.append({"title": row["title"], "start": start, "end": end})
+    return items
+
+
+def _image_kind(data: bytes) -> str:
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return ""
+
+
+def _write_avatar(data: bytes, media: str) -> None:
+    path = _avatar_path()
+    path.write_bytes(data)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    with db() as conn:
+        meta_set(conn, "account_avatar_type", media)
+
+
+def _download_avatar(url: str, token: str, base_url: str):
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return None
+    headers = {"Accept": "image/*"}
+    base = urlparse(base_url)
+    if parsed.netloc == base.netloc and token.strip():
+        headers["Authorization"] = "Bearer %s" % token.strip()
+    try:
+        response = httpx.get(url, headers=headers, timeout=8, follow_redirects=False)
+    except httpx.HTTPError:
+        return None
+    if response.status_code in {301, 302, 303, 307, 308}:
+        location = response.headers.get("location") or ""
+        if not location.startswith("https://"):
+            return None
+        try:
+            response = httpx.get(location, headers={"Accept": "image/*"}, timeout=8, follow_redirects=False)
+        except httpx.HTTPError:
+            return None
+    if response.status_code != 200:
+        return None
+    data = response.content
+    if not data or len(data) > 2_000_000:
+        return None
+    media = _image_kind(data)
+    if not media:
+        return None
+    return data, media
+
+
+def _remember_account(profile: dict, token: str, base_url: str) -> None:
+    name = str(profile.get("name") or "").strip()
+    if name:
+        with db() as conn:
+            meta_set(conn, "account_name", name[:120])
+    saved = None
+    try:
+        saved = _download_avatar(str(profile.get("avatar_url") or ""), token, base_url)
+    except Exception:
+        saved = None
+    if saved:
+        _write_avatar(*saved)
+
+
+def _pretty_name(email: str) -> str:
+    local = email.split("@", 1)[0]
+    parts = [part for part in local.replace("+", ".").replace("_", ".").replace("-", ".").split(".") if part]
+    if not parts:
+        return "Account"
+    return " ".join(part[:1].upper() + part[1:] for part in parts)
+
+
+def _initials(name: str) -> str:
+    parts = [part for part in name.split() if part]
+    if not parts:
+        return "A"
+    if len(parts) == 1:
+        return parts[0][:1].upper()
+    return (parts[0][:1] + parts[-1][:1]).upper()
+
+
+def _account_view(request: Request) -> dict:
+    email = _session_email(request)
+    with db() as conn:
+        stored = meta_get(conn, "account_name", "").strip()
+    path = _avatar_path()
+    has_avatar = path.is_file() and path.stat().st_size > 0
+    name = stored or (_pretty_name(email) if email else "Account")
+    return {
+        "name": name,
+        "email": email,
+        "initials": _initials(name),
+        "avatar": has_avatar,
+        "avatar_v": int(path.stat().st_mtime) if has_avatar else 0,
+    }
 
 
 def _berkeley_email(value: str) -> str:
@@ -698,6 +1032,7 @@ def _render(request: Request, name: str, context: dict):
     payload["request"] = request
     payload["posthog"] = posthog_public()
     payload["billing"] = billing_state()
+    payload["account"] = _account_view(request)
     return templates.TemplateResponse(request, name, payload)
 
 
@@ -1237,9 +1572,9 @@ def _week_calendar(conn, tz, now, week_key: str):
         if monday <= item["day_sort"] <= sunday:
             by_day.setdefault(item["day_sort"], []).append(item)
     for bucket in by_day.values():
-        bucket.sort(key=lambda item: (item["course_order"], item["sort"], item["title"]))
-    notes = _notes_for(conn, [monday + timedelta(days=offset) for offset in range(7)])
+        bucket.sort(key=lambda item: (item["sort"], item["course_order"], item["title"]))
     days = []
+    rows = {}
     for offset in range(7):
         cursor = monday + timedelta(days=offset)
         items = by_day.get(cursor, [])
@@ -1250,11 +1585,21 @@ def _week_calendar(conn, tz, now, week_key: str):
                 "month": cursor.strftime("%b"),
                 "weekday": _WEEKDAYS[offset],
                 "today": cursor == today,
-                "items": items[:3],
-                "extra": max(0, len(items) - 3),
-                "lines": notes.get(cursor.isoformat(), []),
             }
         )
+        for item in items:
+            local = item["sort"].astimezone(tz)
+            minute = local.hour * 60 + local.minute
+            row = rows.setdefault(minute, {"time": item["time"], "by_day": {}})
+            row["by_day"].setdefault(cursor, []).append(item)
+    slots = []
+    for minute in sorted(rows):
+        row = rows[minute]
+        cells = []
+        for offset in range(7):
+            cursor = monday + timedelta(days=offset)
+            cells.append({"iso": cursor.isoformat(), "items": row["by_day"].get(cursor, [])})
+        slots.append({"time": row["time"], "days": cells})
     return {
         "label": thursday.strftime("%B %Y"),
         "number": "W%d" % thursday.isocalendar()[1],
@@ -1263,7 +1608,7 @@ def _week_calendar(conn, tz, now, week_key: str):
         "next": (monday + timedelta(days=7)).isoformat(),
         "month_key": "%04d-%02d" % (thursday.year, thursday.month),
         "days": days,
-        "someday": notes.get("someday", []),
+        "slots": slots,
     }
 
 

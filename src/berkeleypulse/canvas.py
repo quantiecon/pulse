@@ -23,8 +23,8 @@ def next_url(link_header: Optional[str]) -> Optional[str]:
     return match.group(1)
 
 
-def verify_canvas_token(base_url: str, token: str) -> str:
-    """Confirm a token with Canvas and return the account name. The token is not logged."""
+def canvas_account(base_url: str, token: str) -> dict:
+    """Confirm a token with Canvas. Returns the account name and avatar URL. The token is not logged."""
     url = base_url.rstrip("/") + "/api/v1/users/self"
     try:
         response = httpx.get(
@@ -44,11 +44,18 @@ def verify_canvas_token(base_url: str, token: str) -> str:
     except Exception as exc:
         raise CanvasError("bCourses did not return an account for that token.") from exc
     name = ""
+    avatar = ""
     if isinstance(payload, dict):
         name = str(payload.get("name") or payload.get("short_name") or "").strip()
+        avatar = str(payload.get("avatar_url") or "").strip()
     if not name:
         raise CanvasError("bCourses did not return an account for that token.")
-    return name
+    return {"name": name, "avatar_url": avatar}
+
+
+def verify_canvas_token(base_url: str, token: str) -> str:
+    """Confirm a token with Canvas and return the account name. The token is not logged."""
+    return canvas_account(base_url, token)["name"]
 
 
 def _error_message(response: httpx.Response, used_token: bool) -> str:
